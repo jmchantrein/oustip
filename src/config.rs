@@ -5,9 +5,48 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Valid preset values
 const VALID_PRESETS: &[&str] = &["minimal", "recommended", "full", "paranoid"];
+
+/// Secure string type that zeroizes memory on drop
+/// Used for sensitive data like tokens and passwords
+#[derive(Clone, Default, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[serde(transparent)]
+pub struct SecureString(String);
+
+impl SecureString {
+    pub fn new(s: String) -> Self {
+        Self(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Debug for SecureString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
+impl From<String> for SecureString {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for SecureString {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
 
 /// Regex pattern for timer interval validation (e.g., "4h", "30m", "1d")
 fn is_valid_interval(interval: &str) -> bool {
@@ -165,33 +204,23 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
+    #[default]
     Auto,
     Iptables,
     Nftables,
 }
 
-impl Default for Backend {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FilterMode {
     /// Table raw PREROUTING (before conntrack, more performant)
     Raw,
     /// After conntrack (allows responses to LAN-initiated connections)
+    #[default]
     Conntrack,
-}
-
-impl Default for FilterMode {
-    fn default() -> Self {
-        Self::Conntrack
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -208,8 +237,8 @@ pub struct GotifyConfig {
     pub enabled: bool,
     pub url: String,
     /// Token can be set directly or via OUSTIP_GOTIFY_TOKEN env var
-    #[serde(deserialize_with = "deserialize_secret")]
-    pub token: String,
+    /// Memory is securely zeroed when dropped
+    pub token: SecureString,
     /// Environment variable name to read token from (optional)
     #[serde(default)]
     pub token_env: Option<String>,
@@ -217,16 +246,17 @@ pub struct GotifyConfig {
 
 impl GotifyConfig {
     /// Get the effective token, checking env var first if configured
-    pub fn get_token(&self) -> String {
+    /// Returns a SecureString that will be zeroed when dropped
+    pub fn get_token(&self) -> SecureString {
         // First check custom env var if specified
         if let Some(ref env_name) = self.token_env {
             if let Ok(val) = env::var(env_name) {
-                return val;
+                return SecureString::new(val);
             }
         }
         // Then check default env var
         if let Ok(val) = env::var("OUSTIP_GOTIFY_TOKEN") {
-            return val;
+            return SecureString::new(val);
         }
         // Fall back to config value
         self.token.clone()
@@ -241,8 +271,8 @@ pub struct EmailConfig {
     pub smtp_port: u16,
     pub smtp_user: String,
     /// Password can be set directly or via OUSTIP_SMTP_PASSWORD env var
-    #[serde(deserialize_with = "deserialize_secret")]
-    pub smtp_password: String,
+    /// Memory is securely zeroed when dropped
+    pub smtp_password: SecureString,
     /// Environment variable name to read password from (optional)
     #[serde(default)]
     pub smtp_password_env: Option<String>,
@@ -252,16 +282,17 @@ pub struct EmailConfig {
 
 impl EmailConfig {
     /// Get the effective password, checking env var first if configured
-    pub fn get_password(&self) -> String {
+    /// Returns a SecureString that will be zeroed when dropped
+    pub fn get_password(&self) -> SecureString {
         // First check custom env var if specified
         if let Some(ref env_name) = self.smtp_password_env {
             if let Ok(val) = env::var(env_name) {
-                return val;
+                return SecureString::new(val);
             }
         }
         // Then check default env var
         if let Ok(val) = env::var("OUSTIP_SMTP_PASSWORD") {
-            return val;
+            return SecureString::new(val);
         }
         // Fall back to config value
         self.smtp_password.clone()
@@ -275,14 +306,6 @@ pub struct WebhookConfig {
     pub url: String,
     #[serde(deserialize_with = "deserialize_headers")]
     pub headers: HashMap<String, String>,
-}
-
-/// Deserialize a secret field (accepts string as-is)
-fn deserialize_secret<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    String::deserialize(deserializer)
 }
 
 /// Deserialize and validate HTTP headers (reject injection attempts)
@@ -360,18 +383,13 @@ impl Default for Ipv6Config {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Ipv6BootState {
     Disabled,
     Enabled,
+    #[default]
     Unchanged,
-}
-
-impl Default for Ipv6BootState {
-    fn default() -> Self {
-        Self::Unchanged
-    }
 }
 
 /// Get blocklist names for a preset
@@ -496,5 +514,108 @@ mod tests {
         let parsed: Config = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed.language, config.language);
         assert_eq!(parsed.preset, config.preset);
+    }
+
+    #[test]
+    fn test_secure_string_debug_redacted() {
+        let secret = SecureString::new("my-secret-token".to_string());
+        let debug_str = format!("{:?}", secret);
+        assert_eq!(debug_str, "[REDACTED]");
+        assert!(!debug_str.contains("my-secret-token"));
+    }
+
+    #[test]
+    fn test_secure_string_as_str() {
+        let secret = SecureString::new("test-value".to_string());
+        assert_eq!(secret.as_str(), "test-value");
+        assert!(!secret.is_empty());
+    }
+
+    #[test]
+    fn test_secure_string_default_empty() {
+        let secret = SecureString::default();
+        assert!(secret.is_empty());
+        assert_eq!(secret.as_str(), "");
+    }
+
+    #[test]
+    fn test_valid_interval() {
+        assert!(is_valid_interval("4h"));
+        assert!(is_valid_interval("30m"));
+        assert!(is_valid_interval("1d"));
+        assert!(is_valid_interval("60s"));
+        assert!(is_valid_interval("12h"));
+
+        assert!(!is_valid_interval(""));
+        assert!(!is_valid_interval("h"));
+        assert!(!is_valid_interval("4"));
+        assert!(!is_valid_interval("4x"));
+        assert!(!is_valid_interval("abc"));
+    }
+
+    #[test]
+    fn test_header_validation_rejects_newlines() {
+        let yaml = r#"
+enabled: true
+url: "https://example.com/webhook"
+headers:
+  "X-Evil": "value\r\ninjected"
+"#;
+        let result: Result<WebhookConfig, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_header_validation_rejects_invalid_chars() {
+        let yaml = r#"
+enabled: true
+url: "https://example.com/webhook"
+headers:
+  "X-Header:Invalid": "value"
+"#;
+        let result: Result<WebhookConfig, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_header_validation_accepts_valid() {
+        let yaml = r#"
+enabled: true
+url: "https://example.com/webhook"
+headers:
+  "X-Custom-Header": "some-value"
+  "Authorization": "Bearer token"
+"#;
+        let result: Result<WebhookConfig, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.headers.len(), 2);
+    }
+
+    #[test]
+    fn test_config_validation_invalid_preset() {
+        let mut config = Config::default();
+        config.preset = "invalid_preset".to_string();
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid preset"));
+    }
+
+    #[test]
+    fn test_config_validation_invalid_interval() {
+        let mut config = Config::default();
+        config.update_interval = "invalid".to_string();
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid update_interval"));
+    }
+
+    #[test]
+    fn test_config_validation_http_url_rejected() {
+        let mut config = Config::default();
+        config.blocklists[0].url = "http://example.com/list".to_string();
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("HTTPS"));
     }
 }

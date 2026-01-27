@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::config::Config;
-use crate::enforcer::create_backend;
+use crate::enforcer::{create_backend, get_backend_display_name};
 use crate::fetcher::format_count;
 use crate::installer::is_installed;
 use crate::stats::OustipState;
@@ -39,23 +39,8 @@ pub async fn run(config_path: &Path) -> Result<()> {
     // Get state
     let state = OustipState::load().unwrap_or_default();
 
-    // Backend name
-    let backend_name = match config.backend {
-        crate::config::Backend::Auto => {
-            // Detect actual backend
-            if std::process::Command::new("nft")
-                .arg("--version")
-                .output()
-                .is_ok()
-            {
-                "nftables (auto)"
-            } else {
-                "iptables (auto)"
-            }
-        }
-        crate::config::Backend::Iptables => "iptables",
-        crate::config::Backend::Nftables => "nftables",
-    };
+    // Backend name (use shared detection function)
+    let backend_name = get_backend_display_name(config.backend);
 
     // Mode name
     let mode_name = match config.mode {

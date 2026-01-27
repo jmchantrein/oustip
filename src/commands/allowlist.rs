@@ -151,7 +151,7 @@ async fn reload_allowlist(config_path: &Path) -> Result<()> {
     check_root()?;
 
     // Simply run update to reload everything
-    super::update::run(None, config_path).await?;
+    super::update::run(None, false, config_path).await?;
 
     println!("[OK] Allowlist reloaded");
     Ok(())

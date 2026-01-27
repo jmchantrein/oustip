@@ -6,6 +6,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
@@ -33,6 +34,8 @@ pub struct FetchResult {
 /// HTTP client for fetching lists
 pub struct Fetcher {
     client: Client,
+    /// Cumulative download size tracker (thread-safe for concurrent fetches)
+    total_downloaded: AtomicUsize,
 }
 
 impl Fetcher {
@@ -43,7 +46,20 @@ impl Fetcher {
             .user_agent(format!("oustip/{}", env!("CARGO_PKG_VERSION")))
             .build()
             .context("Failed to create HTTP client")?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            total_downloaded: AtomicUsize::new(0),
+        })
+    }
+
+    /// Get the total bytes downloaded so far
+    pub fn total_downloaded(&self) -> usize {
+        self.total_downloaded.load(Ordering::Relaxed)
+    }
+
+    /// Reset the download counter
+    pub fn reset_counter(&self) {
+        self.total_downloaded.store(0, Ordering::Relaxed);
     }
 
     /// Fetch a single blocklist with retry logic
@@ -164,6 +180,16 @@ impl Fetcher {
                                     max_size
                                 ));
                             }
+                            // Check cumulative limit before downloading
+                            let current_total = self.total_downloaded.load(Ordering::Relaxed);
+                            if current_total + content_length as usize > MAX_TOTAL_SIZE {
+                                return Err(anyhow::anyhow!(
+                                    "Cumulative download limit exceeded: {} + {} > {} bytes",
+                                    current_total,
+                                    content_length,
+                                    MAX_TOTAL_SIZE
+                                ));
+                            }
                         }
 
                         let body = response.text().await.context("Failed to read response body")?;
@@ -174,6 +200,16 @@ impl Fetcher {
                                 "Downloaded content too large: {} bytes (max: {} bytes)",
                                 body.len(),
                                 max_size
+                            ));
+                        }
+
+                        // Update cumulative download counter
+                        let new_total = self.total_downloaded.fetch_add(body.len(), Ordering::Relaxed) + body.len();
+                        if new_total > MAX_TOTAL_SIZE {
+                            return Err(anyhow::anyhow!(
+                                "Cumulative download limit exceeded: {} bytes (max: {} bytes)",
+                                new_total,
+                                MAX_TOTAL_SIZE
                             ));
                         }
 

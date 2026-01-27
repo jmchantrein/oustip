@@ -70,7 +70,7 @@ impl AlertManager {
 
         if self.config.email.enabled {
             destinations.push("Email");
-            if self.send_email(level, title, message).is_ok() {
+            if self.send_email(level, title, message).await.is_ok() {
                 success_count += 1;
             }
         }
@@ -109,13 +109,13 @@ impl AlertManager {
             priority: level.gotify_priority(),
         };
 
-        // Get token from env var or config
+        // Get token from env var or config (SecureString is zeroed on drop)
         let token = self.config.gotify.get_token();
 
         let response = self
             .client
             .post(&url)
-            .header("X-Gotify-Key", &token)
+            .header("X-Gotify-Key", token.as_str())
             .json(&payload)
             .send()
             .await
@@ -132,53 +132,63 @@ impl AlertManager {
         Ok(())
     }
 
-    /// Send alert via email
-    fn send_email(&self, level: AlertLevel, title: &str, message: &str) -> Result<()> {
-        let email_config = &self.config.email;
+    /// Send alert via email (runs in blocking task to avoid blocking async executor)
+    async fn send_email(&self, level: AlertLevel, title: &str, message: &str) -> Result<()> {
+        let email_config = self.config.email.clone();
+        let level_str = level.as_str().to_string();
+        let title = title.to_string();
+        let message = message.to_string();
 
-        let subject = format!("[OustIP {}] {}", level.as_str(), title);
-        let body = format!(
-            "OustIP Alert\n\
-             ==============\n\n\
-             Level: {}\n\
-             Title: {}\n\n\
-             Message:\n{}\n",
-            level.as_str(),
-            title,
-            message
-        );
+        // Run SMTP operations in blocking task
+        tokio::task::spawn_blocking(move || {
+            let subject = format!("[OustIP {}] {}", level_str, title);
+            let body = format!(
+                "OustIP Alert\n\
+                 ==============\n\n\
+                 Level: {}\n\
+                 Title: {}\n\n\
+                 Message:\n{}\n",
+                level_str,
+                title,
+                message
+            );
 
-        let email = Message::builder()
-            .from(
-                email_config
-                    .from
+            let email = Message::builder()
+                .from(
+                    email_config
+                        .from
+                        .parse()
+                        .context("Invalid 'from' email address")?,
+                )
+                .to(email_config
+                    .to
                     .parse()
-                    .context("Invalid 'from' email address")?,
-            )
-            .to(email_config
-                .to
-                .parse()
-                .context("Invalid 'to' email address")?)
-            .subject(subject)
-            .header(ContentType::TEXT_PLAIN)
-            .body(body)
-            .context("Failed to build email")?;
+                    .context("Invalid 'to' email address")?)
+                .subject(subject)
+                .header(ContentType::TEXT_PLAIN)
+                .body(body)
+                .context("Failed to build email")?;
 
-        // Get password from env var or config
-        let password = email_config.get_password();
+            // Get password from env var or config (SecureString is zeroed on drop)
+            let password = email_config.get_password();
 
-        let creds = Credentials::new(
-            email_config.smtp_user.clone(),
-            password,
-        );
+            let creds = Credentials::new(
+                email_config.smtp_user.clone(),
+                password.as_str().to_string(),
+            );
 
-        let mailer = SmtpTransport::relay(&email_config.smtp_host)
-            .context("Failed to create SMTP transport")?
-            .port(email_config.smtp_port)
-            .credentials(creds)
-            .build();
+            let mailer = SmtpTransport::relay(&email_config.smtp_host)
+                .context("Failed to create SMTP transport")?
+                .port(email_config.smtp_port)
+                .credentials(creds)
+                .build();
 
-        mailer.send(&email).context("Failed to send email")?;
+            mailer.send(&email).context("Failed to send email")?;
+
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .context("Email task panicked")??;
 
         debug!("Email alert sent successfully");
         Ok(())

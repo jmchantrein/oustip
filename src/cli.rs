@@ -42,6 +42,10 @@ pub enum Commands {
         /// Use a preset configuration (overrides config file)
         #[arg(long)]
         preset: Option<String>,
+
+        /// Dry-run mode: fetch and process but don't apply firewall rules
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Show blocking statistics

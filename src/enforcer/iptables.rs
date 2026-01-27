@@ -248,17 +248,17 @@ fn parse_human_number(s: &str) -> Option<u64> {
         return None;
     }
 
-    let (num_part, suffix) = if s.ends_with('K') {
-        (&s[..s.len() - 1], 1_000u64)
-    } else if s.ends_with('M') {
-        (&s[..s.len() - 1], 1_000_000u64)
-    } else if s.ends_with('G') {
-        (&s[..s.len() - 1], 1_000_000_000u64)
+    let (num_part, multiplier) = if let Some(stripped) = s.strip_suffix('K') {
+        (stripped, 1_000u64)
+    } else if let Some(stripped) = s.strip_suffix('M') {
+        (stripped, 1_000_000u64)
+    } else if let Some(stripped) = s.strip_suffix('G') {
+        (stripped, 1_000_000_000u64)
     } else {
         (s, 1u64)
     };
 
-    num_part.parse::<u64>().ok().map(|n| n * suffix)
+    num_part.parse::<u64>().ok().map(|n| n * multiplier)
 }
 
 #[cfg(test)]

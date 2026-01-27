@@ -54,6 +54,9 @@ futures = "0.3"
 # System calls
 libc = "0.2"
 
+# Secure memory handling
+zeroize = { version = "1", features = ["derive"] }
+
 [dev-dependencies]
 tempfile = "3"
 mockall = "0.13"

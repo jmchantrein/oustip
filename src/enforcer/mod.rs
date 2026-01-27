@@ -57,6 +57,23 @@ pub fn detect_backend() -> Result<Backend> {
     anyhow::bail!("No firewall backend available (nft or iptables required)")
 }
 
+/// Get the display name for a backend configuration
+/// Returns "nftables (auto)" or "iptables (auto)" when auto-detected,
+/// or just "nftables"/"iptables" for explicit configuration
+pub fn get_backend_display_name(backend: Backend) -> &'static str {
+    match backend {
+        Backend::Auto => {
+            if Command::new("nft").arg("--version").output().is_ok() {
+                "nftables (auto)"
+            } else {
+                "iptables (auto)"
+            }
+        }
+        Backend::Iptables => "iptables",
+        Backend::Nftables => "nftables",
+    }
+}
+
 /// Create a firewall backend based on configuration
 pub fn create_backend(backend: Backend) -> Result<Box<dyn FirewallBackend>> {
     let actual_backend = match backend {

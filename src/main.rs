@@ -42,8 +42,8 @@ async fn main() -> Result<()> {
         Commands::Install { preset } => {
             oustip::commands::install::run(preset, &cli.config).await
         }
-        Commands::Update { preset } => {
-            oustip::commands::update::run(preset, &cli.config).await
+        Commands::Update { preset, dry_run } => {
+            oustip::commands::update::run(preset, dry_run, &cli.config).await
         }
         Commands::Stats => {
             oustip::commands::stats::run(&cli.config).await

@@ -13,8 +13,11 @@ use crate::fetcher::{format_count, Fetcher};
 use crate::stats::OustipState;
 
 /// Run the update command
-pub async fn run(preset: Option<String>, config_path: &Path) -> Result<()> {
-    check_root()?;
+pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> Result<()> {
+    // Skip root check in dry-run mode (no firewall changes)
+    if !dry_run {
+        check_root()?;
+    }
 
     // Load config
     let config = Config::load(config_path)
@@ -23,7 +26,11 @@ pub async fn run(preset: Option<String>, config_path: &Path) -> Result<()> {
     // Set language from config
     rust_i18n::set_locale(&config.language);
 
-    info!("Updating blocklists...");
+    if dry_run {
+        info!("DRY-RUN: Fetching and processing blocklists (no firewall changes)...");
+    } else {
+        info!("Updating blocklists...");
+    }
 
     // Create fetcher and backend
     let fetcher = Fetcher::new()?;
@@ -110,6 +117,28 @@ pub async fn run(preset: Option<String>, config_path: &Path) -> Result<()> {
         format_count(aggregated.len()),
         format_count(total_ips as usize)
     );
+
+    if dry_run {
+        // Dry-run: show what would happen without applying
+        println!();
+        println!("[DRY-RUN] Summary:");
+        println!("  - Blocklists fetched: {}", source_stats.len());
+        println!("  - Total IPs before filtering: {}", format_count(all_ips.len()));
+        println!("  - Allowlist entries: {}", format_count(allowlist.len()));
+        println!("  - IPs after filtering: {}", format_count(filtered_ips.len()));
+        println!("  - Optimized CIDR ranges: {}", format_count(aggregated.len()));
+        println!("  - Total IPs covered: {}", format_count(total_ips as usize));
+        println!();
+        println!("[DRY-RUN] No firewall rules applied.");
+        if !fetch_errors.is_empty() {
+            println!();
+            println!("[DRY-RUN] Fetch errors:");
+            for (source, error) in &fetch_errors {
+                println!("  - {}: {}", source, error);
+            }
+        }
+        return Ok(());
+    }
 
     // Apply firewall rules
     info!("Applying firewall rules...");

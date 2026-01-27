@@ -13,7 +13,7 @@ pub async fn run(config_path: &Path) -> Result<()> {
     info!("Enabling OustIP...");
 
     // Simply run update to reapply rules
-    super::update::run(None, config_path).await?;
+    super::update::run(None, false, config_path).await?;
 
     println!("[OK] OustIP enabled");
     Ok(())
