@@ -1,0 +1,280 @@
+//! nftables backend implementation.
+
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use ipnet::IpNet;
+use std::io::Write;
+use std::process::{Command, Stdio};
+use tracing::{debug, info};
+
+use super::{exec_cmd, FirewallBackend, FirewallStats};
+use crate::config::FilterMode;
+
+const TABLE_NAME: &str = "oustip";
+const SET_NAME: &str = "blocklist";
+
+/// nftables backend
+pub struct NftablesBackend;
+
+impl NftablesBackend {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Generate nftables script for applying rules
+    fn generate_apply_script(&self, ips: &[IpNet], mode: FilterMode) -> String {
+        let mut script = String::new();
+
+        // Flush existing table if it exists
+        script.push_str(&format!("table ip {} {{\n", TABLE_NAME));
+        script.push_str("}\n");
+        script.push_str(&format!("delete table ip {}\n", TABLE_NAME));
+
+        // Create table and set
+        script.push_str(&format!("table ip {} {{\n", TABLE_NAME));
+        script.push_str(&format!("    set {} {{\n", SET_NAME));
+        script.push_str("        type ipv4_addr\n");
+        script.push_str("        flags interval\n");
+
+        // Add elements
+        if !ips.is_empty() {
+            script.push_str("        elements = { ");
+            let elements: Vec<String> = ips.iter().map(|ip| ip.to_string()).collect();
+            script.push_str(&elements.join(", "));
+            script.push_str(" }\n");
+        }
+
+        script.push_str("    }\n\n");
+
+        // Create chains based on mode
+        let (hook, priority) = match mode {
+            FilterMode::Raw => ("prerouting", -300),      // Before conntrack
+            FilterMode::Conntrack => ("prerouting", -1),  // After conntrack
+        };
+
+        // Input chain (packets destined for this host)
+        script.push_str(&format!(
+            "    chain input {{\n        type filter hook input priority {}; policy accept;\n",
+            priority
+        ));
+        script.push_str(&format!(
+            "        ip saddr @{} counter log prefix \"OustIP-Blocked: \" drop\n",
+            SET_NAME
+        ));
+        script.push_str("    }\n\n");
+
+        // Forward chain (packets being routed through)
+        script.push_str(&format!(
+            "    chain forward {{\n        type filter hook forward priority {}; policy accept;\n",
+            priority
+        ));
+        script.push_str(&format!(
+            "        ip saddr @{} counter log prefix \"OustIP-Blocked: \" drop\n",
+            SET_NAME
+        ));
+        script.push_str("    }\n");
+
+        // Prerouting chain for raw mode
+        if mode == FilterMode::Raw {
+            script.push_str(&format!(
+                "\n    chain prerouting {{\n        type filter hook {} priority {}; policy accept;\n",
+                hook, priority
+            ));
+            script.push_str(&format!(
+                "        ip saddr @{} counter log prefix \"OustIP-Blocked: \" drop\n",
+                SET_NAME
+            ));
+            script.push_str("    }\n");
+        }
+
+        script.push_str("}\n");
+        script
+    }
+
+    /// Generate nftables script for removing rules
+    fn generate_remove_script(&self) -> String {
+        // Check if table exists before deleting
+        format!(
+            "table ip {} {{\n}}\ndelete table ip {}\n",
+            TABLE_NAME, TABLE_NAME
+        )
+    }
+
+    /// Execute nft with stdin script
+    fn exec_nft_script(&self, script: &str) -> Result<()> {
+        debug!("Executing nft script:\n{}", script);
+
+        let mut child = Command::new("nft")
+            .arg("-f")
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("Failed to spawn nft")?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(script.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("nft failed: {}", stderr);
+        }
+
+        Ok(())
+    }
+
+    /// Parse counter values from nft output
+    fn parse_counters(&self, output: &str) -> FirewallStats {
+        let mut stats = FirewallStats::default();
+
+        // Look for counter lines like: counter packets 123 bytes 456
+        for line in output.lines() {
+            if line.contains("counter") && line.contains("packets") {
+                if let Some(packets) = extract_number_after(line, "packets") {
+                    stats.packets_blocked += packets;
+                }
+                if let Some(bytes) = extract_number_after(line, "bytes") {
+                    stats.bytes_blocked += bytes;
+                }
+            }
+        }
+
+        stats
+    }
+}
+
+impl Default for NftablesBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl FirewallBackend for NftablesBackend {
+    async fn apply_rules(&self, ips: &[IpNet], mode: FilterMode) -> Result<()> {
+        let script = self.generate_apply_script(ips, mode);
+        self.exec_nft_script(&script)?;
+        info!("Applied nftables rules with {} entries", ips.len());
+        Ok(())
+    }
+
+    async fn remove_rules(&self) -> Result<()> {
+        // Check if table exists first
+        let check = Command::new("nft")
+            .args(["list", "table", "ip", TABLE_NAME])
+            .output();
+
+        if let Ok(output) = check {
+            if output.status.success() {
+                let script = self.generate_remove_script();
+                self.exec_nft_script(&script)?;
+                info!("Removed nftables rules");
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_stats(&self) -> Result<FirewallStats> {
+        let output = exec_cmd("nft", &["list", "table", "ip", TABLE_NAME])?;
+        Ok(self.parse_counters(&output))
+    }
+
+    async fn is_blocked(&self, ip: &IpNet) -> Result<bool> {
+        let output = exec_cmd("nft", &["list", "set", "ip", TABLE_NAME, SET_NAME])?;
+        let ip_str = ip.to_string();
+        Ok(output.contains(&ip_str))
+    }
+
+    async fn is_active(&self) -> Result<bool> {
+        let result = Command::new("nft")
+            .args(["list", "table", "ip", TABLE_NAME])
+            .output();
+
+        match result {
+            Ok(output) => Ok(output.status.success()),
+            Err(_) => Ok(false),
+        }
+    }
+
+    async fn entry_count(&self) -> Result<usize> {
+        let output = exec_cmd("nft", &["list", "set", "ip", TABLE_NAME, SET_NAME])?;
+
+        // Count elements in the set
+        // Format: elements = { 1.2.3.4/24, 5.6.7.8/16, ... }
+        let count: usize = output
+            .lines()
+            .filter(|line| line.contains("elements"))
+            .map(|line| {
+                // Extract the part between { and }
+                if let Some(start) = line.find('{') {
+                    if let Some(end) = line.find('}') {
+                        let elements = &line[start + 1..end];
+                        return elements.split(',').filter(|s| !s.trim().is_empty()).count();
+                    }
+                }
+                0
+            })
+            .sum();
+
+        Ok(count)
+    }
+}
+
+/// Extract a number after a keyword in a string
+fn extract_number_after(s: &str, keyword: &str) -> Option<u64> {
+    let idx = s.find(keyword)?;
+    let after = &s[idx + keyword.len()..];
+    let num_str: String = after
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    num_str.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_apply_script() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec![
+            "192.168.0.0/24".parse().unwrap(),
+            "10.0.0.0/8".parse().unwrap(),
+        ];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        assert!(script.contains("table ip oustip"));
+        assert!(script.contains("set blocklist"));
+        assert!(script.contains("192.168.0.0/24"));
+        assert!(script.contains("10.0.0.0/8"));
+        assert!(script.contains("OustIP-Blocked"));
+    }
+
+    #[test]
+    fn test_parse_counters() {
+        let backend = NftablesBackend::new();
+        let output = r#"
+table ip oustip {
+    chain input {
+        counter packets 123 bytes 4567 log prefix "OustIP-Blocked: " drop
+    }
+}
+"#;
+        let stats = backend.parse_counters(output);
+        assert_eq!(stats.packets_blocked, 123);
+        assert_eq!(stats.bytes_blocked, 4567);
+    }
+
+    #[test]
+    fn test_extract_number_after() {
+        assert_eq!(extract_number_after("packets 123 bytes", "packets"), Some(123));
+        assert_eq!(extract_number_after("bytes 456", "bytes"), Some(456));
+        assert_eq!(extract_number_after("no number here", "packets"), None);
+    }
+}

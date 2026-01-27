@@ -1,0 +1,53 @@
+# OustIP Docker Configuration
+# Minimal configuration for containerized deployment
+
+language: en
+backend: auto
+mode: conntrack
+alert_outbound_to_blocklist: false
+
+alerts:
+  gotify:
+    enabled: false
+    url: ""
+    token: ""
+  email:
+    enabled: false
+  webhook:
+    enabled: false
+
+blocklists:
+  - name: spamhaus_drop
+    url: https://iplists.firehol.org/files/spamhaus_drop.netset
+    enabled: true
+  - name: spamhaus_edrop
+    url: https://iplists.firehol.org/files/spamhaus_edrop.netset
+    enabled: true
+  - name: dshield
+    url: https://iplists.firehol.org/files/dshield.netset
+    enabled: true
+  - name: firehol_level1
+    url: https://iplists.firehol.org/files/firehol_level1.netset
+    enabled: true
+
+auto_allowlist:
+  cloudflare: true
+  github: true
+  google_cloud: false
+  aws: false
+  fastly: false
+
+allowlist:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "127.0.0.0/8"
+
+update_interval: "4h"
+log_file: "/var/log/oustip.log"
+log_level: "info"
+
+ipv6:
+  boot_state: unchanged
+
+preset: recommended
