@@ -15,8 +15,64 @@ const STATE_DIR: &str = "/var/lib/oustip";
 const SYSTEMD_SERVICE: &str = "/etc/systemd/system/oustip.service";
 const SYSTEMD_TIMER: &str = "/etc/systemd/system/oustip.timer";
 
+/// Valid preset values (must match config.rs)
+const VALID_PRESETS: &[&str] = &["minimal", "recommended", "full", "paranoid"];
+
+/// Validate preset value to prevent injection
+fn validate_preset(preset: &str) -> Result<()> {
+    if !VALID_PRESETS.contains(&preset) {
+        anyhow::bail!(
+            "Invalid preset '{}'. Valid values: {}",
+            preset,
+            VALID_PRESETS.join(", ")
+        );
+    }
+    Ok(())
+}
+
+/// Validate timer interval format to prevent injection
+/// Accepts formats like: 30s, 5m, 4h, 1d
+fn validate_interval(interval: &str) -> Result<()> {
+    if interval.is_empty() {
+        anyhow::bail!("Timer interval cannot be empty");
+    }
+
+    let len = interval.len();
+    if len < 2 {
+        anyhow::bail!(
+            "Invalid timer interval '{}'. Use format like '4h', '30m', '1d'",
+            interval
+        );
+    }
+
+    let (num_part, suffix) = interval.split_at(len - 1);
+
+    // Validate suffix
+    if !matches!(suffix, "s" | "m" | "h" | "d") {
+        anyhow::bail!(
+            "Invalid timer interval '{}'. Suffix must be s, m, h, or d",
+            interval
+        );
+    }
+
+    // Validate number part
+    if num_part.parse::<u32>().is_err() {
+        anyhow::bail!(
+            "Invalid timer interval '{}'. Number part must be a positive integer",
+            interval
+        );
+    }
+
+    Ok(())
+}
+
 /// Install OustIP
 pub fn install(preset: Option<&str>) -> Result<()> {
+    // Validate preset if provided (prevents injection attacks)
+    if let Some(p) = preset {
+        validate_preset(p)?;
+    }
+
     // Check if already installed
     if Path::new(CONFIG_FILE).exists() {
         anyhow::bail!(
@@ -31,11 +87,15 @@ pub fn install(preset: Option<&str>) -> Result<()> {
     fs::create_dir_all(CONFIG_DIR).context("Failed to create config directory")?;
     fs::create_dir_all(STATE_DIR).context("Failed to create state directory")?;
 
+    // Set restrictive permissions on state directory
+    fs::set_permissions(STATE_DIR, fs::Permissions::from_mode(0o700))
+        .context("Failed to set state directory permissions")?;
+
     // Create config file
     info!("Creating {}...", CONFIG_FILE);
     let mut config_content = Config::generate_default_yaml();
 
-    // Override preset if specified
+    // Override preset if specified (already validated above)
     if let Some(p) = preset {
         config_content = config_content.replace("preset: recommended", &format!("preset: {}", p));
     }
@@ -154,6 +214,9 @@ pub fn uninstall() -> Result<()> {
 
 /// Update systemd timer interval
 pub fn update_timer_interval(interval: &str) -> Result<()> {
+    // Validate interval format (prevents injection attacks)
+    validate_interval(interval)?;
+
     info!("Updating timer interval to {}...", interval);
     fs::write(SYSTEMD_TIMER, generate_timer_unit(interval))
         .context("Failed to update timer")?;

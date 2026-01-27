@@ -86,10 +86,23 @@ pub(crate) fn exec_cmd(program: &str, args: &[&str]) -> Result<String> {
     }
 }
 
-/// Check if running as root
+/// Check if running as root (effective UID == 0)
+///
+/// This check verifies that the process has the necessary privileges to
+/// manipulate firewall rules. While capability-based checks would be more
+/// precise (CAP_NET_ADMIN, CAP_NET_RAW), UID 0 check is simpler and covers
+/// the common case of running with sudo.
 pub fn check_root() -> Result<()> {
-    if unsafe { libc::geteuid() } != 0 {
-        anyhow::bail!("This operation requires root privileges. Please run with sudo.")
+    // SAFETY: geteuid() is a simple syscall that reads the effective user ID.
+    // It has no preconditions, never fails, and doesn't modify any state.
+    // The returned value is a plain integer that's safe to compare.
+    let euid = unsafe { libc::geteuid() };
+
+    if euid != 0 {
+        anyhow::bail!(
+            "This operation requires root privileges. Please run with sudo.\n\
+             Alternatively, ensure the process has CAP_NET_ADMIN and CAP_NET_RAW capabilities."
+        )
     }
     Ok(())
 }

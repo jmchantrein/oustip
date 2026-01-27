@@ -15,6 +15,13 @@ const TIMEOUT_SECS: u64 = 30;
 const MAX_RETRIES: u32 = 3;
 const RETRY_DELAY_MS: u64 = 2000;
 
+/// Maximum size per blocklist file (10 MB)
+/// Largest known list (firehol_level4) is ~1.2 MB, so 10 MB provides ample margin
+const MAX_BLOCKLIST_SIZE: usize = 10 * 1024 * 1024;
+
+/// Maximum total size for all downloads combined (50 MB)
+const MAX_TOTAL_SIZE: usize = 50 * 1024 * 1024;
+
 /// Result of fetching a blocklist
 #[derive(Debug)]
 pub struct FetchResult {
@@ -129,8 +136,13 @@ impl Fetcher {
         Ok(ips)
     }
 
-    /// Fetch content with retry logic
+    /// Fetch content with retry logic and size validation
     async fn fetch_with_retry(&self, url: &str) -> Result<String> {
+        self.fetch_with_retry_and_limit(url, MAX_BLOCKLIST_SIZE).await
+    }
+
+    /// Fetch content with retry logic and custom size limit
+    async fn fetch_with_retry_and_limit(&self, url: &str, max_size: usize) -> Result<String> {
         let mut last_error = None;
 
         for attempt in 0..MAX_RETRIES {
@@ -143,7 +155,29 @@ impl Fetcher {
             match self.client.get(url).send().await {
                 Ok(response) => {
                     if response.status().is_success() {
-                        return response.text().await.context("Failed to read response body");
+                        // Check Content-Length header if available
+                        if let Some(content_length) = response.content_length() {
+                            if content_length as usize > max_size {
+                                return Err(anyhow::anyhow!(
+                                    "Response too large: {} bytes (max: {} bytes)",
+                                    content_length,
+                                    max_size
+                                ));
+                            }
+                        }
+
+                        let body = response.text().await.context("Failed to read response body")?;
+
+                        // Double-check actual size after download
+                        if body.len() > max_size {
+                            return Err(anyhow::anyhow!(
+                                "Downloaded content too large: {} bytes (max: {} bytes)",
+                                body.len(),
+                                max_size
+                            ));
+                        }
+
+                        return Ok(body);
                     }
                     last_error = Some(anyhow::anyhow!("HTTP {}", response.status()));
                 }
@@ -262,11 +296,8 @@ impl Fetcher {
     }
 }
 
-impl Default for Fetcher {
-    fn default() -> Self {
-        Self::new().expect("Failed to create default fetcher")
-    }
-}
+// Note: Default is intentionally not implemented for Fetcher
+// because new() can fail and we want explicit error handling.
 
 /// Parse a blocklist in FireHOL .netset format
 pub fn parse_blocklist(content: &str) -> Vec<IpNet> {

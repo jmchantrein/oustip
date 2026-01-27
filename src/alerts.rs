@@ -109,10 +109,13 @@ impl AlertManager {
             priority: level.gotify_priority(),
         };
 
+        // Get token from env var or config
+        let token = self.config.gotify.get_token();
+
         let response = self
             .client
             .post(&url)
-            .header("X-Gotify-Key", &self.config.gotify.token)
+            .header("X-Gotify-Key", &token)
             .json(&payload)
             .send()
             .await
@@ -120,8 +123,8 @@ impl AlertManager {
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            error!("Gotify alert failed: {} - {}", status, body);
+            // Don't log response body as it may contain sensitive info
+            error!("Gotify alert failed with status: {}", status);
             anyhow::bail!("Gotify returned {}", status);
         }
 
@@ -161,9 +164,12 @@ impl AlertManager {
             .body(body)
             .context("Failed to build email")?;
 
+        // Get password from env var or config
+        let password = email_config.get_password();
+
         let creds = Credentials::new(
             email_config.smtp_user.clone(),
-            email_config.smtp_password.clone(),
+            password,
         );
 
         let mailer = SmtpTransport::relay(&email_config.smtp_host)
@@ -199,7 +205,7 @@ impl AlertManager {
 
         let mut request = self.client.post(&self.config.webhook.url).json(&payload);
 
-        // Add custom headers
+        // Add custom headers (validated during config deserialization to prevent injection)
         for (key, value) in &self.config.webhook.headers {
             request = request.header(key.as_str(), value.as_str());
         }

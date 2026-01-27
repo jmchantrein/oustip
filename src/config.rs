@@ -1,9 +1,26 @@
 //! Configuration management for OustIP.
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
+use std::env;
 use std::path::Path;
+
+/// Valid preset values
+const VALID_PRESETS: &[&str] = &["minimal", "recommended", "full", "paranoid"];
+
+/// Regex pattern for timer interval validation (e.g., "4h", "30m", "1d")
+fn is_valid_interval(interval: &str) -> bool {
+    if interval.is_empty() {
+        return false;
+    }
+    let len = interval.len();
+    if len < 2 {
+        return false;
+    }
+    let (num, suffix) = interval.split_at(len - 1);
+    matches!(suffix, "s" | "m" | "h" | "d") && num.parse::<u32>().is_ok()
+}
 
 /// Main configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,8 +92,45 @@ impl Config {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
         let config: Config = serde_yaml::from_str(&content)
-            .with_context(|| "Failed to parse config file")?;
+            .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
+
+        // Validate configuration
+        config.validate()?;
+
         Ok(config)
+    }
+
+    /// Validate configuration values
+    pub fn validate(&self) -> Result<()> {
+        // Validate preset if not using individual enabled flags
+        if !self.preset.is_empty() && !VALID_PRESETS.contains(&self.preset.as_str()) {
+            anyhow::bail!(
+                "Invalid preset '{}'. Valid values: {}",
+                self.preset,
+                VALID_PRESETS.join(", ")
+            );
+        }
+
+        // Validate update interval format
+        if !is_valid_interval(&self.update_interval) {
+            anyhow::bail!(
+                "Invalid update_interval '{}'. Use format like '4h', '30m', '1d'",
+                self.update_interval
+            );
+        }
+
+        // Validate blocklist URLs use HTTPS
+        for blocklist in &self.blocklists {
+            if blocklist.enabled && !blocklist.url.starts_with("https://") {
+                anyhow::bail!(
+                    "Blocklist '{}' URL must use HTTPS: {}",
+                    blocklist.name,
+                    blocklist.url
+                );
+            }
+        }
+
+        Ok(())
     }
 
     /// Save configuration to YAML file
@@ -153,7 +207,30 @@ pub struct AlertsConfig {
 pub struct GotifyConfig {
     pub enabled: bool,
     pub url: String,
+    /// Token can be set directly or via OUSTIP_GOTIFY_TOKEN env var
+    #[serde(deserialize_with = "deserialize_secret")]
     pub token: String,
+    /// Environment variable name to read token from (optional)
+    #[serde(default)]
+    pub token_env: Option<String>,
+}
+
+impl GotifyConfig {
+    /// Get the effective token, checking env var first if configured
+    pub fn get_token(&self) -> String {
+        // First check custom env var if specified
+        if let Some(ref env_name) = self.token_env {
+            if let Ok(val) = env::var(env_name) {
+                return val;
+            }
+        }
+        // Then check default env var
+        if let Ok(val) = env::var("OUSTIP_GOTIFY_TOKEN") {
+            return val;
+        }
+        // Fall back to config value
+        self.token.clone()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -163,9 +240,32 @@ pub struct EmailConfig {
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_user: String,
+    /// Password can be set directly or via OUSTIP_SMTP_PASSWORD env var
+    #[serde(deserialize_with = "deserialize_secret")]
     pub smtp_password: String,
+    /// Environment variable name to read password from (optional)
+    #[serde(default)]
+    pub smtp_password_env: Option<String>,
     pub from: String,
     pub to: String,
+}
+
+impl EmailConfig {
+    /// Get the effective password, checking env var first if configured
+    pub fn get_password(&self) -> String {
+        // First check custom env var if specified
+        if let Some(ref env_name) = self.smtp_password_env {
+            if let Ok(val) = env::var(env_name) {
+                return val;
+            }
+        }
+        // Then check default env var
+        if let Ok(val) = env::var("OUSTIP_SMTP_PASSWORD") {
+            return val;
+        }
+        // Fall back to config value
+        self.smtp_password.clone()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -173,7 +273,46 @@ pub struct EmailConfig {
 pub struct WebhookConfig {
     pub enabled: bool,
     pub url: String,
+    #[serde(deserialize_with = "deserialize_headers")]
     pub headers: HashMap<String, String>,
+}
+
+/// Deserialize a secret field (accepts string as-is)
+fn deserialize_secret<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    String::deserialize(deserializer)
+}
+
+/// Deserialize and validate HTTP headers (reject injection attempts)
+fn deserialize_headers<'de, D>(deserializer: D) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let headers: HashMap<String, String> = HashMap::deserialize(deserializer)?;
+
+    // Validate each header for injection attacks
+    for (key, value) in &headers {
+        if key.contains('\r') || key.contains('\n') {
+            return Err(serde::de::Error::custom(
+                format!("Invalid header name '{}': contains newline characters", key)
+            ));
+        }
+        if value.contains('\r') || value.contains('\n') {
+            return Err(serde::de::Error::custom(
+                format!("Invalid header value for '{}': contains newline characters", key)
+            ));
+        }
+        // Validate header name characters (RFC 7230)
+        if !key.chars().all(|c| c.is_ascii_alphanumeric() || "-_".contains(c)) {
+            return Err(serde::de::Error::custom(
+                format!("Invalid header name '{}': contains invalid characters", key)
+            ));
+        }
+    }
+
+    Ok(headers)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

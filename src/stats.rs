@@ -42,14 +42,29 @@ impl OustipState {
         }
     }
 
-    /// Save state to file
+    /// Save state to file atomically
+    ///
+    /// Uses write-to-temp-then-rename pattern to prevent corruption
+    /// if the process is interrupted during write.
     pub fn save(&self) -> Result<()> {
+        use std::io::Write;
+
         let path = Path::new(STATE_FILE);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+
         let content = serde_json::to_string_pretty(self)?;
-        fs::write(path, content)?;
+
+        // Write to temporary file first
+        let temp_path = format!("{}.tmp", STATE_FILE);
+        let mut file = fs::File::create(&temp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?; // Ensure data is flushed to disk
+
+        // Atomically rename temp file to target
+        fs::rename(&temp_path, path)?;
+
         Ok(())
     }
 
