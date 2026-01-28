@@ -348,6 +348,70 @@ Cela signifie que vous devez partager le code source si vous :
 - Distribuez le logiciel
 - Fournissez un acces via un reseau (SaaS)
 
+## Environnements Supportes
+
+### Recommande Pour
+
+| Environnement | Notes |
+|---------------|-------|
+| **Passerelles/Routeurs Linux** | Cas d'usage principal - blocage centralise |
+| **Serveurs VPN/Proxy** | Bloquer les IPs malveillantes avant qu'elles n'atteignent les services |
+| **Serveurs dedies** | Avec acces root et nftables/iptables |
+| **Conteneurs Docker** | Avec `--cap-add NET_ADMIN --network host` |
+| **Routeurs domestiques** | OpenWrt, routeurs Linux personnalises |
+
+### Configuration Requise
+
+- **OS**: Linux (kernel 3.13+ pour nftables, 2.4+ pour iptables)
+- **Distributions**: Debian, Ubuntu, RHEL/CentOS, Alpine, Arch, etc.
+- **Privileges**: Root ou capabilities CAP_NET_ADMIN + CAP_NET_RAW
+- **Pare-feu**: nftables (recommande) ou iptables avec ipset
+- **Memoire**: ~50 Mo pour 100k IPs, ~512 Mo pour 1M IPs
+- **Disque**: ~100 Mo d'espace libre recommande
+
+### Non Recommande Pour
+
+| Environnement | Raison |
+|---------------|--------|
+| Conteneurs rootless | Necessite CAP_NET_ADMIN |
+| Serverless (Lambda, etc.) | Pas d'acces pare-feu natif |
+| Load balancers manages | AWS ALB, GCP LB - pas d'acces iptables |
+| Windows/macOS | Linux uniquement (nftables/iptables) |
+
+## Avantages et Limites
+
+### Avantages
+
+- **Haute Performance**: Rust + sets nftables = O(1) lookup par paquet
+- **Securite Memoire**: Pas de buffer overflows, use-after-free, ou pauses GC
+- **Non-Intrusif**: Cree des chaines isolees, ne modifie jamais les regles existantes
+- **Agregation Intelligente**: Optimisation CIDR reduit le nombre de regles jusqu'a 70%
+- **Detection des Chevauchements**: Detection automatique des conflits allow+block avec resolution DNS
+- **Defense en Profondeur**: Validation des entrees, HTTPS obligatoire, zeroisation des credentials
+- **Pret pour Production**: Operations atomiques, logique de retry, degradation gracieuse
+
+### Limites
+
+| Limite | Contournement |
+|--------|---------------|
+| **Pas de detection comportementale** | Utiliser avec fail2ban ou CrowdSec pour blocage base sur le comportement |
+| **Agregation IPv6 limitee** | Considerer `oustip ipv6 disable` si non necessaire |
+| **Pas de rollback automatique** | Utiliser `oustip disable` puis `oustip enable` pour rollback |
+| **Configuration par serveur** | Utiliser Ansible/Terraform pour synchronisation multi-serveurs |
+| **Max 2M entrees** | Utiliser preset `minimal` ou `recommended` en production |
+| **Blocklists statiques** | Listes mises a jour toutes les 6h par defaut (timer configurable) |
+
+### Comparaison avec Alternatives
+
+| Outil | Objectif | Utiliser Ensemble? |
+|-------|----------|-------------------|
+| **fail2ban** | Blocage base sur comportement (parsing logs) | Oui - OustIP pour preventif, fail2ban pour reactif |
+| **CrowdSec** | ML + intelligence de menaces communautaire | Oui - approches complementaires |
+| **firewalld** | Gestion pare-feu par zones | Oui - OustIP ajoute des blocklists dynamiques |
+| **ufw** | Wrapper pare-feu simple | OustIP prefere pour passerelles |
+
+**Stack Recommandee**: OustIP (couche 1) + fail2ban (couche 2) + CrowdSec (couche 3)
+
 ## Contribuer
 
 Les contributions sont les bienvenues ! Merci de :

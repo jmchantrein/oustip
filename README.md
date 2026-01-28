@@ -350,6 +350,70 @@ This means you must share source code if you:
 - Distribute the software
 - Provide access to it over a network (SaaS)
 
+## Supported Environments
+
+### Recommended For
+
+| Environment | Notes |
+|-------------|-------|
+| **Linux Gateways/Routers** | Primary use case - centralized blocking |
+| **VPN/Proxy Servers** | Block malicious IPs before they reach services |
+| **Dedicated Servers** | With root access and nftables/iptables |
+| **Docker Containers** | With `--cap-add NET_ADMIN --network host` |
+| **Home Routers** | OpenWrt, custom Linux routers |
+
+### System Requirements
+
+- **OS**: Linux (kernel 3.13+ for nftables, 2.4+ for iptables)
+- **Distributions**: Debian, Ubuntu, RHEL/CentOS, Alpine, Arch, etc.
+- **Privileges**: Root or CAP_NET_ADMIN + CAP_NET_RAW capabilities
+- **Firewall**: nftables (recommended) or iptables with ipset
+- **Memory**: ~50 MB for 100k IPs, ~512 MB for 1M IPs
+- **Disk**: ~100 MB free space recommended
+
+### Not Recommended For
+
+| Environment | Reason |
+|-------------|--------|
+| Rootless containers | Requires CAP_NET_ADMIN |
+| Serverless (Lambda, etc.) | No native firewall access |
+| Managed load balancers | AWS ALB, GCP LB - no iptables access |
+| Windows/macOS | Linux-only (nftables/iptables) |
+
+## Advantages & Limitations
+
+### Advantages
+
+- **High Performance**: Rust + nftables sets = O(1) lookup per packet
+- **Memory Safe**: No buffer overflows, use-after-free, or GC pauses
+- **Non-Intrusive**: Creates isolated chains, never modifies existing rules
+- **Smart Aggregation**: CIDR optimization reduces rule count by up to 70%
+- **Overlap Detection**: Automatic detection of allow+block conflicts with DNS resolution
+- **Defense in Depth**: Input validation, HTTPS enforcement, credential zeroization
+- **Production Ready**: Atomic file operations, retry logic, graceful degradation
+
+### Limitations
+
+| Limitation | Workaround |
+|------------|------------|
+| **No behavioral detection** | Use with fail2ban or CrowdSec for behavior-based blocking |
+| **IPv6 aggregation limited** | Consider `oustip ipv6 disable` if not needed |
+| **No automatic rollback** | Use `oustip disable` then `oustip enable` to rollback |
+| **Per-host configuration** | Use Ansible/Terraform for multi-server sync |
+| **Max 2M entries** | Use `minimal` or `recommended` preset for production |
+| **Static blocklists** | Lists updated every 6h by default (timer configurable) |
+
+### Comparison with Alternatives
+
+| Tool | Purpose | Use Together? |
+|------|---------|---------------|
+| **fail2ban** | Behavior-based blocking (log parsing) | Yes - OustIP for preemptive, fail2ban for reactive |
+| **CrowdSec** | ML + community threat intelligence | Yes - complementary approaches |
+| **firewalld** | Zone-based firewall management | Yes - OustIP adds dynamic blocklists |
+| **ufw** | Simple firewall wrapper | OustIP preferred for gateways |
+
+**Recommended Stack**: OustIP (layer 1) + fail2ban (layer 2) + CrowdSec (layer 3)
+
 ## Contributing
 
 Contributions welcome! Please:
