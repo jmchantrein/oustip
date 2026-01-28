@@ -5,6 +5,7 @@ use std::path::Path;
 
 use crate::cli::BlocklistAction;
 use crate::config::Config;
+use crate::dns::resolve_ptr_str;
 use crate::enforcer::check_root;
 use crate::lock::LockGuard;
 use crate::stats::OustipState;
@@ -194,7 +195,7 @@ async fn show_blocklist(name: &str, dns: bool, limit: usize, config_path: &Path)
                 let display_count = std::cmp::min(limit, s.ips.len());
                 for ip in s.ips.iter().take(display_count) {
                     if dns {
-                        let hostname = resolve_ip(ip).await;
+                        let hostname = resolve_ptr_str(ip).await;
                         println!("  {} -> {}", ip, hostname);
                     } else {
                         println!("  {}", ip);
@@ -219,33 +220,6 @@ async fn show_blocklist(name: &str, dns: bool, limit: usize, config_path: &Path)
     }
 
     Ok(())
-}
-
-/// Resolve IP to hostname via reverse DNS
-async fn resolve_ip(ip: &str) -> String {
-    use std::net::IpAddr;
-
-    // Parse IP
-    let ip_addr: IpAddr = match ip.parse() {
-        Ok(addr) => addr,
-        Err(_) => {
-            // It's a CIDR, extract the IP part
-            if let Some(ip_part) = ip.split('/').next() {
-                match ip_part.parse() {
-                    Ok(addr) => addr,
-                    Err(_) => return "(invalid)".to_string(),
-                }
-            } else {
-                return "(invalid)".to_string();
-            }
-        }
-    };
-
-    // Perform reverse DNS lookup
-    match tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip_addr)).await {
-        Ok(Ok(hostname)) => hostname,
-        _ => "(no PTR)".to_string(),
-    }
 }
 
 /// Format number with thousands separator

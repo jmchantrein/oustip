@@ -8,6 +8,7 @@ pub mod alerts;
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod dns;
 pub mod enforcer;
 pub mod fetcher;
 pub mod installer;
