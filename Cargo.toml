@@ -71,6 +71,13 @@ hostname = "0.4"
 [dev-dependencies]
 mockall = "0.13"
 tokio-test = "0.4"
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+wiremock = "0.6"
+
+[[bench]]
+name = "aggregation"
+harness = false
 
 [profile.release]
 opt-level = 3

@@ -139,4 +139,123 @@ mod tests {
         let deduped = deduplicate(&nets);
         assert_eq!(deduped.len(), 2);
     }
+
+    #[test]
+    fn test_count_ips_overflow_protection() {
+        // Test that large networks don't cause overflow
+        let nets: Vec<IpNet> = vec![
+            "0.0.0.0/0".parse().unwrap(), // Entire IPv4 space
+        ];
+        let count = count_ips(&nets);
+        assert_eq!(count, 1u128 << 32); // 2^32 = 4,294,967,296
+    }
+
+    #[test]
+    fn test_aggregate_empty() {
+        let nets: Vec<IpNet> = vec![];
+        let aggregated = aggregate(&nets);
+        assert!(aggregated.is_empty());
+    }
+
+    #[test]
+    fn test_subtract_allowlist_empty() {
+        let blocklist: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let allowlist: Vec<IpNet> = vec![];
+        let result = subtract_allowlist(&blocklist, &allowlist);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_subtract_allowlist_contained() {
+        // Smaller blocklist entry contained in larger allowlist entry
+        let blocklist: Vec<IpNet> = vec!["10.0.1.0/24".parse().unwrap()];
+        let allowlist: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        let result = subtract_allowlist(&blocklist, &allowlist);
+        assert!(result.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Strategy to generate valid IPv4 CIDR strings
+    fn ipv4_cidr_strategy() -> impl Strategy<Value = IpNet> {
+        (0u8..=255, 0u8..=255, 0u8..=255, 0u8..=255, 0u8..=32).prop_map(|(a, b, c, d, prefix)| {
+            let ip_str = format!("{}.{}.{}.{}/{}", a, b, c, d, prefix);
+            ip_str.parse::<IpNet>().unwrap()
+        })
+    }
+
+    /// Strategy to generate valid IPv4 CIDR vectors
+    fn ipv4_cidr_vec_strategy(max_size: usize) -> impl Strategy<Value = Vec<IpNet>> {
+        prop::collection::vec(ipv4_cidr_strategy(), 0..max_size)
+    }
+
+    proptest! {
+        /// Aggregation should never increase the number of entries
+        #[test]
+        fn prop_aggregate_reduces_or_maintains_size(nets in ipv4_cidr_vec_strategy(100)) {
+            let aggregated = aggregate(&nets);
+            prop_assert!(aggregated.len() <= nets.len());
+        }
+
+        /// Aggregation result should contain no duplicates
+        #[test]
+        fn prop_aggregate_no_duplicates(nets in ipv4_cidr_vec_strategy(50)) {
+            let aggregated = aggregate(&nets);
+            let set: HashSet<_> = aggregated.iter().collect();
+            prop_assert_eq!(set.len(), aggregated.len());
+        }
+
+        /// Deduplication should reduce or maintain size
+        #[test]
+        fn prop_deduplicate_reduces_size(nets in ipv4_cidr_vec_strategy(100)) {
+            let deduped = deduplicate(&nets);
+            prop_assert!(deduped.len() <= nets.len());
+        }
+
+        /// Deduplication result should have no duplicates
+        #[test]
+        fn prop_deduplicate_unique(nets in ipv4_cidr_vec_strategy(50)) {
+            let deduped = deduplicate(&nets);
+            let set: HashSet<_> = deduped.iter().collect();
+            prop_assert_eq!(set.len(), deduped.len());
+        }
+
+        /// Count IPs should be deterministic
+        #[test]
+        fn prop_count_ips_deterministic(nets in ipv4_cidr_vec_strategy(20)) {
+            let count1 = count_ips(&nets);
+            let count2 = count_ips(&nets);
+            prop_assert_eq!(count1, count2);
+        }
+
+        /// Subtraction should never add entries
+        #[test]
+        fn prop_subtract_reduces_size(
+            blocklist in ipv4_cidr_vec_strategy(50),
+            allowlist in ipv4_cidr_vec_strategy(10)
+        ) {
+            let result = subtract_allowlist(&blocklist, &allowlist);
+            prop_assert!(result.len() <= blocklist.len());
+        }
+
+        /// Empty allowlist should not change blocklist
+        #[test]
+        fn prop_subtract_empty_allowlist_identity(blocklist in ipv4_cidr_vec_strategy(50)) {
+            let allowlist: Vec<IpNet> = vec![];
+            let result = subtract_allowlist(&blocklist, &allowlist);
+            prop_assert_eq!(result.len(), blocklist.len());
+        }
+
+        /// Coverage percent should be non-negative
+        #[test]
+        fn prop_coverage_non_negative(nets in ipv4_cidr_vec_strategy(20)) {
+            let count = count_ips(&nets);
+            let coverage = coverage_percent(count);
+            prop_assert!(coverage >= 0.0);
+        }
+    }
 }

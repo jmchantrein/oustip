@@ -196,3 +196,213 @@ pub enum Ipv6Action {
     /// Show IPv6 status
     Status,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn test_cli_parses_help() {
+        // Verify the CLI structure is valid
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn test_cli_version_command() {
+        let cli = Cli::try_parse_from(["oustip", "version"]).unwrap();
+        assert!(matches!(cli.command, Commands::Version));
+    }
+
+    #[test]
+    fn test_cli_update_command() {
+        let cli = Cli::try_parse_from(["oustip", "update"]).unwrap();
+        match cli.command {
+            Commands::Update { preset, dry_run } => {
+                assert!(preset.is_none());
+                assert!(!dry_run);
+            }
+            _ => panic!("Expected Update command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_update_with_preset() {
+        let cli = Cli::try_parse_from(["oustip", "update", "--preset", "minimal"]).unwrap();
+        match cli.command {
+            Commands::Update { preset, dry_run } => {
+                assert_eq!(preset, Some("minimal".to_string()));
+                assert!(!dry_run);
+            }
+            _ => panic!("Expected Update command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_update_dry_run() {
+        let cli = Cli::try_parse_from(["oustip", "update", "--dry-run"]).unwrap();
+        match cli.command {
+            Commands::Update { dry_run, .. } => {
+                assert!(dry_run);
+            }
+            _ => panic!("Expected Update command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_check_command() {
+        let cli = Cli::try_parse_from(["oustip", "check", "192.168.1.1"]).unwrap();
+        match cli.command {
+            Commands::Check { ip } => {
+                assert_eq!(ip, "192.168.1.1");
+            }
+            _ => panic!("Expected Check command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_search_command() {
+        let cli = Cli::try_parse_from(["oustip", "search", "8.8.8.8", "--dns"]).unwrap();
+        match cli.command {
+            Commands::Search { ip, dns } => {
+                assert_eq!(ip, "8.8.8.8");
+                assert!(dns);
+            }
+            _ => panic!("Expected Search command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_allowlist_add() {
+        let cli = Cli::try_parse_from(["oustip", "allowlist", "add", "10.0.0.0/8"]).unwrap();
+        match cli.command {
+            Commands::Allowlist {
+                action: AllowlistAction::Add { ip },
+            } => {
+                assert_eq!(ip, "10.0.0.0/8");
+            }
+            _ => panic!("Expected Allowlist Add command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_blocklist_show() {
+        let cli = Cli::try_parse_from([
+            "oustip",
+            "blocklist",
+            "show",
+            "firehol_level1",
+            "--limit",
+            "50",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Blocklist {
+                action: BlocklistAction::Show { name, limit, dns },
+            } => {
+                assert_eq!(name, "firehol_level1");
+                assert_eq!(limit, 50);
+                assert!(!dns);
+            }
+            _ => panic!("Expected Blocklist Show command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_report_command() {
+        let cli =
+            Cli::try_parse_from(["oustip", "report", "--format", "json", "--top", "20"]).unwrap();
+        match cli.command {
+            Commands::Report { format, top, send } => {
+                assert_eq!(format, "json");
+                assert_eq!(top, 20);
+                assert!(!send);
+            }
+            _ => panic!("Expected Report command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_health_command() {
+        let cli = Cli::try_parse_from(["oustip", "health", "--json"]).unwrap();
+        match cli.command {
+            Commands::Health { json } => {
+                assert!(json);
+            }
+            _ => panic!("Expected Health command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_global_options() {
+        let cli = Cli::try_parse_from([
+            "oustip",
+            "-q",
+            "-v",
+            "--config",
+            "/custom/path.yaml",
+            "status",
+        ])
+        .unwrap();
+        assert!(cli.quiet);
+        assert!(cli.verbose);
+        assert_eq!(cli.config.to_str().unwrap(), "/custom/path.yaml");
+    }
+
+    #[test]
+    fn test_cli_lang_option() {
+        let cli = Cli::try_parse_from(["oustip", "--lang", "fr", "status"]).unwrap();
+        assert_eq!(cli.lang, Some("fr".to_string()));
+    }
+
+    #[test]
+    fn test_cli_install_with_preset() {
+        let cli = Cli::try_parse_from(["oustip", "install", "--preset", "paranoid"]).unwrap();
+        match cli.command {
+            Commands::Install { preset } => {
+                assert_eq!(preset, Some("paranoid".to_string()));
+            }
+            _ => panic!("Expected Install command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_ipv6_commands() {
+        let cli = Cli::try_parse_from(["oustip", "ipv6", "status"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Ipv6 {
+                action: Ipv6Action::Status
+            }
+        ));
+
+        let cli = Cli::try_parse_from(["oustip", "ipv6", "disable"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Ipv6 {
+                action: Ipv6Action::Disable
+            }
+        ));
+    }
+
+    #[test]
+    fn test_cli_assume_commands() {
+        let cli = Cli::try_parse_from(["oustip", "assume", "add", "1.2.3.4"]).unwrap();
+        match cli.command {
+            Commands::Assume {
+                action: AssumeAction::Add { ip },
+            } => {
+                assert_eq!(ip, "1.2.3.4");
+            }
+            _ => panic!("Expected Assume Add command"),
+        }
+
+        let cli = Cli::try_parse_from(["oustip", "assume", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Assume {
+                action: AssumeAction::List
+            }
+        ));
+    }
+}

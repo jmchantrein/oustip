@@ -430,4 +430,117 @@ mod tests {
         assert_eq!(format_count(1500), "1.5K");
         assert_eq!(format_count(1_500_000), "1.5M");
     }
+
+    #[test]
+    fn test_parse_blocklist_empty() {
+        let content = "";
+        let ips = parse_blocklist(content);
+        assert!(ips.is_empty());
+    }
+
+    #[test]
+    fn test_parse_blocklist_only_comments() {
+        let content = "# comment 1\n# comment 2\n# comment 3\n";
+        let ips = parse_blocklist(content);
+        assert!(ips.is_empty());
+    }
+
+    #[test]
+    fn test_parse_blocklist_invalid_lines() {
+        let content = "192.168.1.1\nnot-an-ip\n10.0.0.1\ninvalid-cidr/99\n";
+        let ips = parse_blocklist(content);
+        // Should only parse valid IPs
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_blocklist_whitespace() {
+        let content = "  192.168.1.1  \n  10.0.0.0/8  \n\t172.16.0.0/12\t\n";
+        let ips = parse_blocklist(content);
+        assert_eq!(ips.len(), 3);
+    }
+
+    #[test]
+    fn test_format_count_boundaries() {
+        assert_eq!(format_count(0), "0");
+        assert_eq!(format_count(999), "999");
+        assert_eq!(format_count(1000), "1.0K");
+        assert_eq!(format_count(999_999), "1000.0K");
+        assert_eq!(format_count(1_000_000), "1.0M");
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Generate valid IPv4 address string
+    fn ipv4_string_strategy() -> impl Strategy<Value = String> {
+        (0u8..=255, 0u8..=255, 0u8..=255, 0u8..=255)
+            .prop_map(|(a, b, c, d)| format!("{}.{}.{}.{}", a, b, c, d))
+    }
+
+    /// Generate valid IPv4 CIDR string
+    fn ipv4_cidr_string_strategy() -> impl Strategy<Value = String> {
+        (0u8..=255, 0u8..=255, 0u8..=255, 0u8..=255, 0u8..=32)
+            .prop_map(|(a, b, c, d, prefix)| format!("{}.{}.{}.{}/{}", a, b, c, d, prefix))
+    }
+
+    /// Generate blocklist content with valid entries
+    fn blocklist_content_strategy(max_lines: usize) -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop_oneof![
+                ipv4_string_strategy(),
+                ipv4_cidr_string_strategy(),
+                Just("# comment".to_string()),
+                Just("".to_string()),
+            ],
+            0..max_lines,
+        )
+        .prop_map(|lines| lines.join("\n"))
+    }
+
+    proptest! {
+        /// Parsing should never panic on valid IP strings
+        #[test]
+        fn prop_parse_valid_ip_no_panic(ip in ipv4_string_strategy()) {
+            let content = format!("{}\n", ip);
+            let result = parse_blocklist(&content);
+            prop_assert!(!result.is_empty());
+        }
+
+        /// Parsing should never panic on valid CIDR strings
+        #[test]
+        fn prop_parse_valid_cidr_no_panic(cidr in ipv4_cidr_string_strategy()) {
+            let content = format!("{}\n", cidr);
+            let result = parse_blocklist(&content);
+            prop_assert!(!result.is_empty());
+        }
+
+        /// Parsing should handle arbitrary content without panicking
+        #[test]
+        fn prop_parse_arbitrary_content_no_panic(content in blocklist_content_strategy(100)) {
+            let _ = parse_blocklist(&content);
+            // Just verify it doesn't panic
+        }
+
+        /// Format count should never panic
+        #[test]
+        fn prop_format_count_no_panic(count: usize) {
+            let result = format_count(count);
+            prop_assert!(!result.is_empty());
+        }
+
+        /// Parsed results should be valid IpNet
+        #[test]
+        fn prop_parsed_results_valid(content in blocklist_content_strategy(50)) {
+            let results = parse_blocklist(&content);
+            for net in results {
+                // Should be able to convert to string and back
+                let s = net.to_string();
+                prop_assert!(s.parse::<IpNet>().is_ok());
+            }
+        }
+    }
 }

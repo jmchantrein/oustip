@@ -14,25 +14,23 @@ pub use nftables::NftablesBackend;
 
 use crate::config::{Backend, FilterMode};
 
-/// Maximum number of entries allowed in firewall set
-/// 2 million entries uses approximately 512 MB of kernel memory
-const MAX_SET_ENTRIES: usize = 2_000_000;
-
 /// Warning threshold for large blocklists (500k entries)
 const WARN_SET_ENTRIES: usize = 500_000;
 
-/// Validate the number of entries before applying rules
-pub fn validate_entry_count(count: usize) -> Result<()> {
-    if count > MAX_SET_ENTRIES {
-        anyhow::bail!(
-            "Blocklist too large: {} entries (max {}). \
-             Consider using fewer sources or a less aggressive preset.",
-            count,
-            MAX_SET_ENTRIES
-        );
-    }
+/// Warning threshold for very large blocklists (2M entries)
+const LARGE_SET_ENTRIES: usize = 2_000_000;
 
-    if count > WARN_SET_ENTRIES {
+/// Log warnings for large blocklists but allow all sizes
+/// Note: No hard limit - all presets must work (including paranoid)
+pub fn validate_entry_count(count: usize) -> Result<()> {
+    if count > LARGE_SET_ENTRIES {
+        warn!(
+            "Very large blocklist: {} entries. Estimated kernel memory: ~{} MB. \
+             Ensure your system has sufficient memory.",
+            count,
+            (count * 32) / (1024 * 1024)
+        );
+    } else if count > WARN_SET_ENTRIES {
         warn!(
             "Large blocklist: {} entries. Estimated kernel memory: ~{} MB",
             count,
