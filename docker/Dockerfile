@@ -11,8 +11,8 @@ RUN apk add --no-cache \
     ca-certificates
 
 # Copy binary (expects it to be in the build context)
-COPY oustip-linux-amd64 /usr/local/bin/oustip
-RUN chmod +x /usr/local/bin/oustip
+COPY oustip-linux-amd64 /usr/local/sbin/oustip
+RUN chmod +x /usr/local/sbin/oustip
 
 # Create directories
 RUN mkdir -p /etc/oustip /var/lib/oustip /var/log
@@ -27,5 +27,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Run as root (required for firewall manipulation)
 USER root
 
-ENTRYPOINT ["/usr/local/bin/oustip"]
+ENTRYPOINT ["/usr/local/sbin/oustip"]
 CMD ["status"]

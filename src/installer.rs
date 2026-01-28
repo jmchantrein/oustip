@@ -213,7 +213,7 @@ pub fn uninstall() -> Result<()> {
     println!("[OK] OustIP uninstalled successfully.");
     println!();
     println!("Note: Firewall rules have been removed.");
-    println!("      The binary at /usr/local/bin/oustip was not removed.");
+    println!("      The binary at /usr/local/sbin/oustip was not removed.");
     println!();
 
     Ok(())
@@ -250,7 +250,7 @@ Documentation=https://github.com/jmchantrein/oustip
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/oustip update --quiet
+ExecStart=/usr/local/sbin/oustip update --quiet
 RemainAfterExit=yes
 
 # Security hardening

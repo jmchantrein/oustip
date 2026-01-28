@@ -31,8 +31,8 @@ OustIP is a high-performance tool for blocking malicious IPs on Linux gateways a
 ```bash
 # Download binary
 curl -sSL https://github.com/jmchantrein/oustip/releases/latest/download/oustip-linux-amd64 \
-    -o /usr/local/bin/oustip
-chmod +x /usr/local/bin/oustip
+    -o /usr/local/sbin/oustip
+chmod +x /usr/local/sbin/oustip
 
 # Install (creates config, systemd service, timer)
 sudo oustip install

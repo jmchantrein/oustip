@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["OustIP Contributors"]
 description = "IP Blocklist Manager for Linux Gateways"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/jmchantrein/oustip"
 keywords = ["firewall", "blocklist", "iptables", "nftables", "security"]
 categories = ["command-line-utilities", "network-programming"]
@@ -62,6 +62,9 @@ tempfile = "3"
 
 # File locking
 fs2 = "0.4"
+
+# DNS resolution
+dns-lookup = "2"
 
 [dev-dependencies]
 mockall = "0.13"

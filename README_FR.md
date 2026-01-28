@@ -31,8 +31,8 @@ OustIP est un outil haute performance pour bloquer les IPs malveillantes sur les
 ```bash
 # Telecharger le binaire
 curl -sSL https://github.com/jmchantrein/oustip/releases/latest/download/oustip-linux-amd64 \
-    -o /usr/local/bin/oustip
-chmod +x /usr/local/bin/oustip
+    -o /usr/local/sbin/oustip
+chmod +x /usr/local/sbin/oustip
 
 # Installer (cree la config, le service et le timer systemd)
 sudo oustip install

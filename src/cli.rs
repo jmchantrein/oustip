@@ -72,6 +72,27 @@ pub enum Commands {
         action: AllowlistAction,
     },
 
+    /// Manage blocklist sources
+    Blocklist {
+        #[command(subcommand)]
+        action: BlocklistAction,
+    },
+
+    /// Search for an IP in allow/blocklists with DNS resolution
+    Search {
+        /// IP address to search
+        ip: String,
+        /// Show DNS reverse resolution
+        #[arg(long, short)]
+        dns: bool,
+    },
+
+    /// Manage assumed IPs (acknowledged allow+block overlaps)
+    Assume {
+        #[command(subcommand)]
+        action: AssumeAction,
+    },
+
     /// Manage IPv6
     Ipv6 {
         #[command(subcommand)]
@@ -101,6 +122,49 @@ pub enum AllowlistAction {
     List,
     /// Reload allowlist from config file
     Reload,
+}
+
+#[derive(Subcommand)]
+pub enum AssumeAction {
+    /// Add an IP to the assumed list (acknowledge allow+block overlap)
+    Add {
+        /// IP address to assume
+        ip: String,
+    },
+    /// Remove an IP from the assumed list
+    Del {
+        /// IP address to remove
+        ip: String,
+    },
+    /// List all assumed IPs
+    List,
+}
+
+#[derive(Subcommand)]
+pub enum BlocklistAction {
+    /// Enable a blocklist source
+    Enable {
+        /// Name of the blocklist to enable
+        name: String,
+    },
+    /// Disable a blocklist source
+    Disable {
+        /// Name of the blocklist to disable
+        name: String,
+    },
+    /// List all blocklist sources and their status
+    List,
+    /// Show IPs from a specific blocklist with optional DNS
+    Show {
+        /// Name of the blocklist
+        name: String,
+        /// Show DNS reverse resolution
+        #[arg(long, short)]
+        dns: bool,
+        /// Limit number of entries to show
+        #[arg(long, short, default_value = "20")]
+        limit: usize,
+    },
 }
 
 #[derive(Subcommand)]

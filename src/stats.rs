@@ -22,6 +22,9 @@ pub struct OustipState {
     pub sources: Vec<SourceStats>,
     pub total_entries: usize,
     pub total_ips: u128,
+    /// IPs that are in both allowlist and blocklist, acknowledged by admin
+    #[serde(default)]
+    pub assumed_ips: Option<Vec<String>>,
 }
 
 /// Statistics for a single blocklist source
@@ -30,6 +33,9 @@ pub struct SourceStats {
     pub name: String,
     pub raw_count: usize,
     pub ip_count: u128,
+    /// Cached IPs from this source (limited to first N for display)
+    #[serde(default)]
+    pub ips: Vec<String>,
 }
 
 impl OustipState {
@@ -119,19 +125,55 @@ impl OustipState {
     }
 
     /// Update state with new fetch results
+    /// Maximum number of IPs to cache per source for display
+    const MAX_CACHED_IPS: usize = 1000;
+
     pub fn update_sources(&mut self, sources: Vec<(String, usize, Vec<IpNet>)>) {
         self.sources = sources
             .iter()
-            .map(|(name, raw_count, ips)| SourceStats {
-                name: name.clone(),
-                raw_count: *raw_count,
-                ip_count: count_ips(ips),
+            .map(|(name, raw_count, ips)| {
+                // Cache first N IPs as strings for display
+                let cached_ips: Vec<String> = ips
+                    .iter()
+                    .take(Self::MAX_CACHED_IPS)
+                    .map(|ip| ip.to_string())
+                    .collect();
+
+                SourceStats {
+                    name: name.clone(),
+                    raw_count: *raw_count,
+                    ip_count: count_ips(ips),
+                    ips: cached_ips,
+                }
             })
             .collect();
 
         self.total_entries = self.sources.iter().map(|s| s.raw_count).sum();
         self.total_ips = self.sources.iter().map(|s| s.ip_count).sum();
         self.last_update = Some(Utc::now());
+    }
+
+    /// Add an IP to the assumed list (acknowledged allow+block overlap)
+    pub fn add_assumed_ip(&mut self, ip: &str) {
+        let assumed = self.assumed_ips.get_or_insert_with(Vec::new);
+        if !assumed.contains(&ip.to_string()) {
+            assumed.push(ip.to_string());
+        }
+    }
+
+    /// Remove an IP from the assumed list
+    pub fn remove_assumed_ip(&mut self, ip: &str) {
+        if let Some(ref mut assumed) = self.assumed_ips {
+            assumed.retain(|i| i != ip);
+        }
+    }
+
+    /// Check if an IP is in the assumed list
+    pub fn is_assumed(&self, ip: &str) -> bool {
+        self.assumed_ips
+            .as_ref()
+            .map(|v| v.contains(&ip.to_string()))
+            .unwrap_or(false)
     }
 }
 

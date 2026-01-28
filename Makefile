@@ -58,15 +58,15 @@ docker:
 
 # Install locally (requires root)
 install: build
-	sudo cp target/release/oustip /usr/local/bin/oustip
-	sudo chmod +x /usr/local/bin/oustip
-	@echo "Installed to /usr/local/bin/oustip"
+	sudo cp target/release/oustip /usr/local/sbin/oustip
+	sudo chmod +x /usr/local/sbin/oustip
+	@echo "Installed to /usr/local/sbin/oustip"
 	@echo "Run 'sudo oustip install' to complete setup"
 
 # Uninstall
 uninstall:
 	sudo oustip uninstall || true
-	sudo rm -f /usr/local/bin/oustip
+	sudo rm -f /usr/local/sbin/oustip
 	@echo "Uninstalled"
 
 # Clean build artifacts

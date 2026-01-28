@@ -51,6 +51,13 @@ async fn main() -> Result<()> {
         Commands::Allowlist { action } => {
             oustip::commands::allowlist::run(action, &cli.config).await
         }
+        Commands::Blocklist { action } => {
+            oustip::commands::blocklist::run(action, &cli.config).await
+        }
+        Commands::Search { ip, dns } => {
+            oustip::commands::search::run(&ip, dns, &cli.config).await
+        }
+        Commands::Assume { action } => oustip::commands::assume::run(action).await,
         Commands::Ipv6 { action } => oustip::commands::ipv6::run(action).await,
         Commands::Uninstall => oustip::commands::uninstall::run(&cli.config).await,
         Commands::Version => {
