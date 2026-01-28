@@ -396,23 +396,20 @@ This means you must share source code if you:
 
 | Limitation | Workaround |
 |------------|------------|
-| **No behavioral detection** | Use with fail2ban or CrowdSec for behavior-based blocking |
+| **No behavioral detection** | Use with CrowdSec for behavior-based and ML detection |
 | **IPv6 aggregation limited** | Consider `oustip ipv6 disable` if not needed |
 | **No automatic rollback** | Use `oustip disable` then `oustip enable` to rollback |
-| **Per-host configuration** | Use Ansible/Terraform for multi-server sync |
-| **Max 2M entries** | Use `minimal` or `recommended` preset for production |
 | **Static blocklists** | Lists updated every 6h by default (timer configurable) |
 
 ### Comparison with Alternatives
 
 | Tool | Purpose | Use Together? |
 |------|---------|---------------|
-| **fail2ban** | Behavior-based blocking (log parsing) | Yes - OustIP for preemptive, fail2ban for reactive |
-| **CrowdSec** | ML + community threat intelligence | Yes - complementary approaches |
+| **CrowdSec** | ML + community threat intelligence + behavior detection | Yes - OustIP for static lists, CrowdSec for dynamic |
 | **firewalld** | Zone-based firewall management | Yes - OustIP adds dynamic blocklists |
 | **ufw** | Simple firewall wrapper | OustIP preferred for gateways |
 
-**Recommended Stack**: OustIP (layer 1) + fail2ban (layer 2) + CrowdSec (layer 3)
+**Recommended Stack**: OustIP (preemptive blocking) + CrowdSec (reactive/behavioral)
 
 ## Contributing
 

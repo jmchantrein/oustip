@@ -394,23 +394,20 @@ Cela signifie que vous devez partager le code source si vous :
 
 | Limite | Contournement |
 |--------|---------------|
-| **Pas de detection comportementale** | Utiliser avec fail2ban ou CrowdSec pour blocage base sur le comportement |
+| **Pas de detection comportementale** | Utiliser avec CrowdSec pour detection comportementale et ML |
 | **Agregation IPv6 limitee** | Considerer `oustip ipv6 disable` si non necessaire |
 | **Pas de rollback automatique** | Utiliser `oustip disable` puis `oustip enable` pour rollback |
-| **Configuration par serveur** | Utiliser Ansible/Terraform pour synchronisation multi-serveurs |
-| **Max 2M entrees** | Utiliser preset `minimal` ou `recommended` en production |
 | **Blocklists statiques** | Listes mises a jour toutes les 6h par defaut (timer configurable) |
 
 ### Comparaison avec Alternatives
 
 | Outil | Objectif | Utiliser Ensemble? |
 |-------|----------|-------------------|
-| **fail2ban** | Blocage base sur comportement (parsing logs) | Oui - OustIP pour preventif, fail2ban pour reactif |
-| **CrowdSec** | ML + intelligence de menaces communautaire | Oui - approches complementaires |
+| **CrowdSec** | ML + intelligence de menaces communautaire + detection comportementale | Oui - OustIP pour listes statiques, CrowdSec pour dynamique |
 | **firewalld** | Gestion pare-feu par zones | Oui - OustIP ajoute des blocklists dynamiques |
 | **ufw** | Wrapper pare-feu simple | OustIP prefere pour passerelles |
 
-**Stack Recommandee**: OustIP (couche 1) + fail2ban (couche 2) + CrowdSec (couche 3)
+**Stack Recommandee**: OustIP (blocage preventif) + CrowdSec (reactif/comportemental)
 
 ## Contribuer
 
