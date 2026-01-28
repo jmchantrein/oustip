@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   oustip:
-    image: ghcr.io/jmchantrein/oustip:latest
+    image: jmchantrein/oustip:latest
     container_name: oustip
     restart: unless-stopped
     network_mode: host
@@ -19,7 +19,7 @@ services:
 
   # Optional: Run as a one-shot update
   oustip-update:
-    image: ghcr.io/jmchantrein/oustip:latest
+    image: jmchantrein/oustip:latest
     profiles: ["update"]
     network_mode: host
     cap_add:
@@ -32,7 +32,7 @@ services:
 
   # Optional: Check status
   oustip-status:
-    image: ghcr.io/jmchantrein/oustip:latest
+    image: jmchantrein/oustip:latest
     profiles: ["status"]
     network_mode: host
     cap_add:

@@ -51,8 +51,8 @@ oustip status
 ### Docker
 
 ```bash
-docker pull ghcr.io/jmchantrein/oustip:latest
-docker run --rm --cap-add NET_ADMIN --network host oustip update
+docker pull jmchantrein/oustip:latest
+docker run --rm --cap-add NET_ADMIN --network host jmchantrein/oustip update
 ```
 
 Ou avec docker-compose :
@@ -61,7 +61,7 @@ Ou avec docker-compose :
 version: '3.8'
 services:
   oustip:
-    image: ghcr.io/jmchantrein/oustip:latest
+    image: jmchantrein/oustip:latest
     cap_add:
       - NET_ADMIN
     network_mode: host
