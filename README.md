@@ -113,6 +113,13 @@ oustip ipv6 status              # Show IPv6 status
 oustip ipv6 disable             # Disable IPv6 via sysctl
 oustip ipv6 enable              # Enable IPv6
 
+# Reports
+oustip report                   # Generate text report
+oustip report --format json     # Generate JSON report
+oustip report --format markdown # Generate Markdown report
+oustip report --send            # Send report via email/gotify/webhook
+oustip report --top 20          # Show top 20 blocked IPs
+
 # Cleanup
 oustip uninstall                # Remove everything
 

@@ -57,6 +57,10 @@ async fn main() -> Result<()> {
         Commands::Search { ip, dns } => oustip::commands::search::run(&ip, dns, &cli.config).await,
         Commands::Assume { action } => oustip::commands::assume::run(action).await,
         Commands::Ipv6 { action } => oustip::commands::ipv6::run(action).await,
+        Commands::Report { format, send, top } => {
+            let fmt = format.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+            oustip::commands::report::run(fmt, send, top, &cli.config).await
+        }
         Commands::Uninstall => oustip::commands::uninstall::run(&cli.config).await,
         Commands::Version => {
             println!("oustip {}", env!("CARGO_PKG_VERSION"));

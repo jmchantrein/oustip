@@ -99,6 +99,19 @@ pub enum Commands {
         action: Ipv6Action,
     },
 
+    /// Generate a statistics report
+    Report {
+        /// Output format (text, json, markdown)
+        #[arg(long, short, default_value = "text")]
+        format: String,
+        /// Send report via configured alert channels (email, gotify, webhook)
+        #[arg(long)]
+        send: bool,
+        /// Number of top blocked IPs to include
+        #[arg(long, default_value = "10")]
+        top: usize,
+    },
+
     /// Uninstall OustIP completely
     Uninstall,
 

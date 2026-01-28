@@ -8,6 +8,7 @@ pub mod disable;
 pub mod enable;
 pub mod install;
 pub mod ipv6;
+pub mod report;
 pub mod search;
 pub mod stats;
 pub mod status;
