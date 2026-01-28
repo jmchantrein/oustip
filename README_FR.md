@@ -1,7 +1,7 @@
 # OustIP
 
 [![CI](https://github.com/jmchantrein/oustip/actions/workflows/ci.yml/badge.svg)](https://github.com/jmchantrein/oustip/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 **Gestionnaire de Blocklists IP pour Passerelles Linux**
 
@@ -84,14 +84,28 @@ oustip status                    # Afficher le statut actuel
 oustip enable                    # Activer le blocage
 oustip disable                   # Desactiver le blocage (conserver la config)
 
-# Verification d'IP
-oustip check 1.2.3.4            # Verifier si une IP est bloquee
+# Verification et recherche d'IP
+oustip check 1.2.3.4            # Verifier si une IP est bloquee dans le pare-feu
+oustip search 1.2.3.4           # Rechercher une IP dans allow/blocklists
+oustip search 1.2.3.4 --dns     # Rechercher avec resolution DNS
 
 # Gestion de la liste blanche
 oustip allowlist add 1.2.3.4    # Ajouter une IP a la liste blanche
 oustip allowlist del 1.2.3.4    # Supprimer une IP de la liste blanche
 oustip allowlist list           # Lister les IPs en liste blanche
 oustip allowlist reload         # Recharger depuis la config
+
+# Gestion des blocklists
+oustip blocklist list           # Lister toutes les sources de blocklist
+oustip blocklist enable <nom>   # Activer une source de blocklist
+oustip blocklist disable <nom>  # Desactiver une source de blocklist
+oustip blocklist show <nom>     # Afficher les IPs d'une source
+oustip blocklist show <nom> --dns  # Afficher avec resolution DNS
+
+# Gestion des IPs assumees (chevauchements reconnus allow+block)
+oustip assume list              # Lister les IPs assumees
+oustip assume add 1.2.3.4       # Reconnaitre un chevauchement (plus de notifications)
+oustip assume del 1.2.3.4       # Retirer de la liste assumee
 
 # Gestion IPv6
 oustip ipv6 status              # Afficher le statut IPv6

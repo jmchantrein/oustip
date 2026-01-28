@@ -1,7 +1,7 @@
 # OustIP
 
 [![CI](https://github.com/jmchantrein/oustip/actions/workflows/ci.yml/badge.svg)](https://github.com/jmchantrein/oustip/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 **IP Blocklist Manager for Linux Gateways**
 
@@ -84,14 +84,28 @@ oustip status                    # Show current status
 oustip enable                    # Enable blocking
 oustip disable                   # Disable blocking (keep config)
 
-# IP checking
-oustip check 1.2.3.4            # Check if IP is blocked
+# IP checking and searching
+oustip check 1.2.3.4            # Check if IP is blocked in firewall
+oustip search 1.2.3.4           # Search IP in allow/blocklists
+oustip search 1.2.3.4 --dns     # Search with DNS resolution
 
 # Allowlist management
 oustip allowlist add 1.2.3.4    # Add IP to allowlist
 oustip allowlist del 1.2.3.4    # Remove IP from allowlist
 oustip allowlist list           # List allowlisted IPs
 oustip allowlist reload         # Reload from config
+
+# Blocklist management
+oustip blocklist list           # List all blocklist sources
+oustip blocklist enable <name>  # Enable a blocklist source
+oustip blocklist disable <name> # Disable a blocklist source
+oustip blocklist show <name>    # Show IPs from a source
+oustip blocklist show <name> --dns  # Show with DNS resolution
+
+# Assume management (acknowledged allow+block overlaps)
+oustip assume list              # List assumed IPs
+oustip assume add 1.2.3.4       # Acknowledge overlap (no more notifications)
+oustip assume del 1.2.3.4       # Remove from assumed list
 
 # IPv6 management
 oustip ipv6 status              # Show IPv6 status
@@ -309,7 +323,11 @@ journalctl -u oustip.service
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+AGPL-3.0-or-later - see [LICENSE](LICENSE)
+
+This means you must share source code if you:
+- Distribute the software
+- Provide access to it over a network (SaaS)
 
 ## Contributing
 
