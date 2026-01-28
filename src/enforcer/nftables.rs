@@ -7,7 +7,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tracing::{debug, info};
 
-use super::{exec_cmd, FirewallBackend, FirewallStats};
+use super::{exec_cmd, validate_entry_count, FirewallBackend, FirewallStats};
 use crate::config::FilterMode;
 
 const TABLE_NAME: &str = "oustip";
@@ -169,6 +169,9 @@ impl Default for NftablesBackend {
 #[async_trait]
 impl FirewallBackend for NftablesBackend {
     async fn apply_rules(&self, ips: &[IpNet], mode: FilterMode) -> Result<()> {
+        // Validate entry count before applying
+        validate_entry_count(ips.len())?;
+
         let script = self.generate_apply_script(ips, mode);
         self.exec_nft_script(&script)?;
         info!("Applied nftables rules with {} entries", ips.len());

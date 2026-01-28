@@ -13,7 +13,7 @@ OustIP est un outil haute performance pour bloquer les IPs malveillantes sur les
 
 ## Fonctionnalites
 
-- **Haute Performance** - Traitement de millions d'IPs avec une latence minimale (nftables par defaut)
+- **Haute Performance** - Traitement de millions d'IPs avec une latence minimale (auto-detection nftables/iptables)
 - **Securite Memoire** - Ecrit en Rust avec des garanties a la compilation
 - **Simple** - Installation et configuration en 5 minutes
 - **Non-Intrusif** - Ne modifie jamais les regles de pare-feu existantes
@@ -78,6 +78,7 @@ oustip install                   # Installer OustIP
 oustip install --preset paranoid # Installer avec un preset specifique
 oustip update                    # Mettre a jour les blocklists et appliquer les regles
 oustip update --preset minimal   # Utiliser un preset specifique pour cette execution
+oustip update --dry-run          # Simulation: telecharger sans appliquer les regles
 oustip stats                     # Afficher les statistiques de blocage
 oustip status                    # Afficher le statut actuel
 
@@ -100,7 +101,8 @@ oustip allowlist reload         # Recharger depuis la config
 oustip blocklist list           # Lister toutes les sources de blocklist
 oustip blocklist enable <nom>   # Activer une source de blocklist
 oustip blocklist disable <nom>  # Desactiver une source de blocklist
-oustip blocklist show <nom>     # Afficher les IPs d'une source
+oustip blocklist show <nom>     # Afficher les IPs d'une source (20 premieres)
+oustip blocklist show <nom> --limit 50  # Afficher avec limite personnalisee
 oustip blocklist show <nom> --dns  # Afficher avec resolution DNS
 
 # Gestion des IPs assumees (chevauchements reconnus allow+block)
@@ -114,13 +116,18 @@ oustip ipv6 disable             # Desactiver IPv6 via sysctl
 oustip ipv6 enable              # Activer IPv6
 
 # Rapports
-oustip report                   # Generer un rapport texte
+oustip report                   # Generer un rapport texte (top 10 IPs bloquees)
 oustip report --format json     # Generer un rapport JSON
 oustip report --format markdown # Generer un rapport Markdown
 oustip report --send            # Envoyer via email/gotify/webhook
-oustip report --top 20          # Afficher les 20 IPs les plus bloquees
+oustip report --top 20          # Afficher les 20 IPs les plus bloquees (defaut: 10)
 
-# Nettoyage
+# Surveillance de sante
+oustip health                   # Executer un controle de sante
+oustip health --json            # Sortie en format JSON (pour monitoring)
+
+# Version et nettoyage
+oustip version                  # Afficher la version
 oustip uninstall                # Tout supprimer
 
 # Options globales
@@ -145,6 +152,10 @@ backend: auto
 # - raw: avant conntrack (plus performant)
 # - conntrack: apres conntrack (permet les reponses aux connexions sortantes)
 mode: conntrack
+
+# Alerter sur les connexions sortantes vers des IPs bloquees (mode conntrack uniquement)
+# Utile pour detecter les compromissions potentielles sur le reseau local
+alert_outbound_to_blocklist: true
 
 # Intervalle de mise a jour pour le timer systemd (ex: 6h, 12h, 1d)
 update_interval: "6h"
@@ -331,7 +342,11 @@ journalctl -u oustip.service
 
 ## Licence
 
-Licence MIT - voir [LICENSE](LICENSE)
+AGPL-3.0-or-later - voir [LICENSE](LICENSE)
+
+Cela signifie que vous devez partager le code source si vous :
+- Distribuez le logiciel
+- Fournissez un acces via un reseau (SaaS)
 
 ## Contribuer
 

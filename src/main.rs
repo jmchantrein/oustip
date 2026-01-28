@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
             let fmt = format.parse().map_err(|e: String| anyhow::anyhow!(e))?;
             oustip::commands::report::run(fmt, send, top, &cli.config).await
         }
+        Commands::Health { json } => oustip::commands::health::run(&cli.config, json).await,
         Commands::Uninstall => oustip::commands::uninstall::run(&cli.config).await,
         Commands::Version => {
             println!("oustip {}", env!("CARGO_PKG_VERSION"));

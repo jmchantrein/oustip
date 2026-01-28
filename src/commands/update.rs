@@ -18,6 +18,44 @@ use crate::stats::OustipState;
 /// Default failure threshold percentage (50%)
 const DEFAULT_FAILURE_THRESHOLD: f64 = 0.5;
 
+/// Minimum required free disk space in bytes (100 MB)
+const MIN_FREE_DISK_SPACE: u64 = 100 * 1024 * 1024;
+
+/// Check if there's enough disk space for the update operation
+fn check_disk_space() -> Result<()> {
+    use std::ffi::CString;
+    use std::mem::MaybeUninit;
+
+    let path = CString::new("/var/lib/oustip").unwrap_or_else(|_| CString::new("/").unwrap());
+
+    // SAFETY: statvfs is a standard POSIX syscall that reads filesystem statistics.
+    // It has no side effects and the MaybeUninit pattern ensures we don't read
+    // uninitialized memory. The path is a valid null-terminated C string.
+    let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
+    let result = unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) };
+
+    if result != 0 {
+        // If we can't check disk space, log warning but continue
+        warn!("Could not check disk space, continuing anyway");
+        return Ok(());
+    }
+
+    // SAFETY: statvfs succeeded, so stat is now initialized
+    let stat = unsafe { stat.assume_init() };
+    let free_space = stat.f_bavail * stat.f_frsize;
+
+    if free_space < MIN_FREE_DISK_SPACE {
+        anyhow::bail!(
+            "Insufficient disk space: {} MB available, {} MB required. \
+             Free up space before updating.",
+            free_space / (1024 * 1024),
+            MIN_FREE_DISK_SPACE / (1024 * 1024)
+        );
+    }
+
+    Ok(())
+}
+
 /// Run the update command
 pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> Result<()> {
     // Skip root check in dry-run mode (no firewall changes)
@@ -31,6 +69,11 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
     } else {
         None
     };
+
+    // Check disk space before proceeding (skip in dry-run mode)
+    if !dry_run {
+        check_disk_space()?;
+    }
 
     // Load config
     let config = Config::load(config_path)

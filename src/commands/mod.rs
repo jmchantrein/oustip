@@ -6,6 +6,7 @@ pub mod blocklist;
 pub mod check;
 pub mod disable;
 pub mod enable;
+pub mod health;
 pub mod install;
 pub mod ipv6;
 pub mod report;

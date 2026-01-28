@@ -1,12 +1,13 @@
 //! iptables backend implementation.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use ipnet::IpNet;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use tracing::{debug, info};
 
-use super::{exec_cmd, FirewallBackend, FirewallStats};
+use super::{exec_cmd, validate_entry_count, FirewallBackend, FirewallStats};
 use crate::config::FilterMode;
 
 const CHAIN_INPUT: &str = "OUSTIP-INPUT";
@@ -21,20 +22,50 @@ impl IptablesBackend {
         Self
     }
 
-    /// Create ipset and populate with IPs
+    /// Create ipset and populate with IPs using batch restore
+    /// Uses `ipset restore` with stdin for O(1) complexity instead of O(n) exec calls
     fn create_ipset(&self, ips: &[IpNet]) -> Result<()> {
         // Destroy existing set if any
         let _ = Command::new("ipset").args(["destroy", IPSET_NAME]).output();
 
-        // Create new set (hash:net for CIDR support)
-        exec_cmd("ipset", &["create", IPSET_NAME, "hash:net", "-exist"])?;
+        // Build restore script for atomic batch import
+        let mut script = String::new();
+        script.push_str(&format!("create {} hash:net -exist\n", IPSET_NAME));
 
-        // Add IPs in batches for efficiency
         for ip in ips {
-            let _ = exec_cmd("ipset", &["add", IPSET_NAME, &ip.to_string(), "-exist"]);
+            script.push_str(&format!("add {} {} -exist\n", IPSET_NAME, ip));
         }
 
-        debug!("Created ipset {} with {} entries", IPSET_NAME, ips.len());
+        // Execute ipset restore with script via stdin
+        let mut child = Command::new("ipset")
+            .arg("restore")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("Failed to spawn ipset restore")?;
+
+        // Write script to stdin
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(script.as_bytes())
+                .context("Failed to write to ipset stdin")?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .context("Failed to wait for ipset")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("ipset restore failed: {}", stderr);
+        }
+
+        debug!(
+            "Created ipset {} with {} entries (batch)",
+            IPSET_NAME,
+            ips.len()
+        );
         Ok(())
     }
 
@@ -175,6 +206,9 @@ impl Default for IptablesBackend {
 #[async_trait]
 impl FirewallBackend for IptablesBackend {
     async fn apply_rules(&self, ips: &[IpNet], mode: FilterMode) -> Result<()> {
+        // Validate entry count before applying
+        validate_entry_count(ips.len())?;
+
         // Create ipset first
         self.create_ipset(ips)?;
 

@@ -7,11 +7,41 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use ipnet::IpNet;
 use std::process::Command;
+use tracing::warn;
 
 pub use iptables::IptablesBackend;
 pub use nftables::NftablesBackend;
 
 use crate::config::{Backend, FilterMode};
+
+/// Maximum number of entries allowed in firewall set
+/// 2 million entries uses approximately 512 MB of kernel memory
+const MAX_SET_ENTRIES: usize = 2_000_000;
+
+/// Warning threshold for large blocklists (500k entries)
+const WARN_SET_ENTRIES: usize = 500_000;
+
+/// Validate the number of entries before applying rules
+pub fn validate_entry_count(count: usize) -> Result<()> {
+    if count > MAX_SET_ENTRIES {
+        anyhow::bail!(
+            "Blocklist too large: {} entries (max {}). \
+             Consider using fewer sources or a less aggressive preset.",
+            count,
+            MAX_SET_ENTRIES
+        );
+    }
+
+    if count > WARN_SET_ENTRIES {
+        warn!(
+            "Large blocklist: {} entries. Estimated kernel memory: ~{} MB",
+            count,
+            (count * 32) / (1024 * 1024)
+        );
+    }
+
+    Ok(())
+}
 
 /// Statistics from the firewall
 #[derive(Debug, Default, Clone)]
@@ -88,18 +118,52 @@ pub fn create_backend(backend: Backend) -> Result<Box<dyn FirewallBackend>> {
     }
 }
 
-/// Execute a command and return output
-pub(crate) fn exec_cmd(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .with_context(|| format!("Failed to execute {}", program))?;
+/// Command execution timeout in seconds
+const CMD_TIMEOUT_SECS: u64 = 30;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("{} failed: {}", program, stderr)
+/// Execute a command with timeout and return output
+pub(crate) fn exec_cmd(program: &str, args: &[&str]) -> Result<String> {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(CMD_TIMEOUT_SECS);
+
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("Failed to spawn {}", program))?;
+
+    // Wait with timeout
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Process completed
+                let output = child.wait_with_output()?;
+                if status.success() {
+                    return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    anyhow::bail!("{} failed: {}", program, stderr);
+                }
+            }
+            Ok(None) => {
+                // Still running, check timeout
+                if start.elapsed() > timeout {
+                    // Kill the process
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    anyhow::bail!("{} timed out after {} seconds", program, CMD_TIMEOUT_SECS);
+                }
+                // Brief sleep to avoid busy-waiting
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => {
+                anyhow::bail!("Error waiting for {}: {}", program, e);
+            }
+        }
     }
 }
 

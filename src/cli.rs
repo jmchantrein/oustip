@@ -112,6 +112,13 @@ pub enum Commands {
         top: usize,
     },
 
+    /// Run health check (for monitoring)
+    Health {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Uninstall OustIP completely
     Uninstall,
 

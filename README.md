@@ -13,7 +13,7 @@ OustIP is a high-performance tool for blocking malicious IPs on Linux gateways a
 
 ## Features
 
-- **High Performance** - Process millions of IPs with minimal latency (nftables default)
+- **High Performance** - Process millions of IPs with minimal latency (auto-detects nftables/iptables)
 - **Memory Safe** - Written in Rust with compile-time guarantees
 - **Simple** - Installation and configuration in 5 minutes
 - **Non-Intrusive** - Never modifies existing firewall rules
@@ -78,6 +78,7 @@ oustip install                   # Install OustIP
 oustip install --preset paranoid # Install with specific preset
 oustip update                    # Update blocklists and apply rules
 oustip update --preset minimal   # Use specific preset for this run
+oustip update --dry-run          # Dry-run: fetch lists but don't apply rules
 oustip stats                     # Show blocking statistics
 oustip status                    # Show current status
 
@@ -100,7 +101,8 @@ oustip allowlist reload         # Reload from config
 oustip blocklist list           # List all blocklist sources
 oustip blocklist enable <name>  # Enable a blocklist source
 oustip blocklist disable <name> # Disable a blocklist source
-oustip blocklist show <name>    # Show IPs from a source
+oustip blocklist show <name>    # Show IPs from a source (first 20)
+oustip blocklist show <name> --limit 50  # Show with custom limit
 oustip blocklist show <name> --dns  # Show with DNS resolution
 
 # Assume management (acknowledged allow+block overlaps)
@@ -114,13 +116,18 @@ oustip ipv6 disable             # Disable IPv6 via sysctl
 oustip ipv6 enable              # Enable IPv6
 
 # Reports
-oustip report                   # Generate text report
+oustip report                   # Generate text report (top 10 blocked IPs)
 oustip report --format json     # Generate JSON report
 oustip report --format markdown # Generate Markdown report
 oustip report --send            # Send report via email/gotify/webhook
-oustip report --top 20          # Show top 20 blocked IPs
+oustip report --top 20          # Show top 20 blocked IPs (default: 10)
 
-# Cleanup
+# Health monitoring
+oustip health                   # Run health check
+oustip health --json            # Output in JSON format (for monitoring)
+
+# Version and cleanup
+oustip version                  # Show version
 oustip uninstall                # Remove everything
 
 # Global options
@@ -138,14 +145,19 @@ Configuration file: `/etc/oustip/config.yaml`
 # Language (en, fr)
 language: en
 
-# Firewall backend (nftables, iptables, auto)
-# nftables is default and recommended for performance
-backend: nftables
+# Firewall backend (auto, iptables, nftables)
+# auto: detect nftables first, then iptables
+# nftables is recommended for performance
+backend: auto
 
 # Filtering mode
 # - raw: before conntrack (more performant)
 # - conntrack: after conntrack (allows responses to outbound connections)
 mode: conntrack
+
+# Alert on outbound connections to blocked IPs (conntrack mode only)
+# Useful to detect potential compromises on the local network
+alert_outbound_to_blocklist: true
 
 # Update interval for systemd timer (e.g., 6h, 12h, 1d)
 update_interval: "6h"

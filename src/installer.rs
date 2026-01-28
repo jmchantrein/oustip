@@ -110,20 +110,25 @@ pub fn install(preset: Option<&str>) -> Result<()> {
         config_content = config_content.replace("preset: recommended", &format!("preset: {}", p));
     }
 
-    fs::write(CONFIG_FILE, config_content).context("Failed to write config file")?;
+    fs::write(CONFIG_FILE, &config_content).context("Failed to write config file")?;
 
     // Set permissions (readable only by root)
     fs::set_permissions(CONFIG_FILE, fs::Permissions::from_mode(0o600))
         .context("Failed to set config permissions")?;
+
+    // Load the config to get the update_interval
+    let config = Config::load(CONFIG_FILE)?;
+    let update_interval = &config.update_interval;
 
     // Create systemd service
     info!("Creating {}...", SYSTEMD_SERVICE);
     fs::write(SYSTEMD_SERVICE, generate_service_unit())
         .context("Failed to write systemd service")?;
 
-    // Create systemd timer
+    // Create systemd timer with configured interval
     info!("Creating {}...", SYSTEMD_TIMER);
-    fs::write(SYSTEMD_TIMER, generate_timer_unit("4h")).context("Failed to write systemd timer")?;
+    fs::write(SYSTEMD_TIMER, generate_timer_unit(update_interval))
+        .context("Failed to write systemd timer")?;
 
     // Reload systemd
     info!("Reloading systemd...");
@@ -244,7 +249,7 @@ pub fn update_timer_interval(interval: &str) -> Result<()> {
 fn generate_service_unit() -> String {
     r#"[Unit]
 Description=OustIP Blocklist Manager
-After=network-online.target
+After=network-online.target nftables.service
 Wants=network-online.target
 Documentation=https://github.com/jmchantrein/oustip
 
@@ -252,6 +257,12 @@ Documentation=https://github.com/jmchantrein/oustip
 Type=oneshot
 ExecStart=/usr/local/sbin/oustip update --quiet
 RemainAfterExit=yes
+
+# Restart on failure with rate limiting
+Restart=on-failure
+RestartSec=5min
+StartLimitBurst=3
+StartLimitIntervalSec=1h
 
 # Security hardening
 NoNewPrivileges=yes

@@ -6,6 +6,7 @@
 use anyhow::{Context, Result};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 const LOCK_FILE: &str = "/var/run/oustip.lock";
@@ -38,6 +39,10 @@ impl LockGuard {
             .truncate(false)
             .open(lock_path)
             .with_context(|| format!("Failed to open lock file: {}", LOCK_FILE))?;
+
+        // Set restrictive permissions (owner read/write only)
+        fs::set_permissions(lock_path, fs::Permissions::from_mode(0o600))
+            .context("Failed to set lock file permissions")?;
 
         // Try to acquire exclusive lock (non-blocking)
         file.try_lock_exclusive().map_err(|_| {
