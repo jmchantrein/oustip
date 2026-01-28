@@ -344,10 +344,60 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_human_number_edge_cases() {
+        assert_eq!(parse_human_number("0"), Some(0));
+        assert_eq!(parse_human_number("0K"), Some(0));
+        assert_eq!(parse_human_number(""), None);
+        assert_eq!(parse_human_number("  "), None);
+        assert_eq!(parse_human_number("abc"), None);
+    }
+
+    #[test]
+    fn test_parse_human_number_with_whitespace() {
+        assert_eq!(parse_human_number("  123  "), Some(123));
+        assert_eq!(parse_human_number("  456K  "), Some(456_000));
+    }
+
+    #[test]
     fn test_parse_iptables_counters() {
         let line = "  123K  456M DROP  all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set oustip_blocklist src";
         let (packets, bytes) = parse_iptables_counters(line).unwrap();
         assert_eq!(packets, 123_000);
         assert_eq!(bytes, 456_000_000);
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_small_numbers() {
+        let line = "  100  2048 DROP  all  --  *  *  0.0.0.0/0  0.0.0.0/0";
+        let (packets, bytes) = parse_iptables_counters(line).unwrap();
+        assert_eq!(packets, 100);
+        assert_eq!(bytes, 2048);
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_invalid() {
+        assert!(parse_iptables_counters("").is_none());
+        assert!(parse_iptables_counters("single").is_none());
+    }
+
+    #[test]
+    fn test_ipset_name_constant() {
+        assert_eq!(IPSET_NAME, "oustip_blocklist");
+        assert!(IPSET_NAME.len() < 32); // ipset name limit
+    }
+
+    #[test]
+    fn test_chain_constants() {
+        assert_eq!(CHAIN_INPUT, "OUSTIP-INPUT");
+        assert_eq!(CHAIN_FORWARD, "OUSTIP-FORWARD");
+        assert!(CHAIN_INPUT.contains("OUSTIP"));
+        assert!(CHAIN_FORWARD.contains("OUSTIP"));
+    }
+
+    #[test]
+    fn test_iptables_backend_new() {
+        let backend = IptablesBackend::new();
+        // Just verify it can be created without panicking
+        let _ = backend;
     }
 }

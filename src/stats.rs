@@ -284,3 +284,170 @@ fn format_duration_ago(dt: DateTime<Utc>) -> String {
         format!("{}d ago", seconds / 86400)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn test_oustip_state_default() {
+        let state = OustipState::default();
+        assert!(state.last_update.is_none());
+        assert!(state.sources.is_empty());
+        assert_eq!(state.total_entries, 0);
+        assert_eq!(state.total_ips, 0);
+        assert!(state.assumed_ips.is_none());
+    }
+
+    #[test]
+    fn test_oustip_state_serialization() {
+        let state = OustipState {
+            last_update: Some(Utc::now()),
+            sources: vec![SourceStats {
+                name: "test".to_string(),
+                raw_count: 100,
+                ip_count: 1000,
+                ips: vec!["192.168.1.0/24".to_string()],
+            }],
+            total_entries: 100,
+            total_ips: 1000,
+            assumed_ips: Some(vec!["8.8.8.8".to_string()]),
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        let parsed: OustipState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.total_entries, 100);
+        assert_eq!(parsed.total_ips, 1000);
+        assert_eq!(parsed.sources.len(), 1);
+        assert_eq!(parsed.sources[0].name, "test");
+    }
+
+    #[test]
+    fn test_add_assumed_ip() {
+        let mut state = OustipState::default();
+
+        state.add_assumed_ip("8.8.8.8");
+        assert!(state.is_assumed("8.8.8.8"));
+        assert!(!state.is_assumed("1.1.1.1"));
+
+        // Adding duplicate should not create duplicate
+        state.add_assumed_ip("8.8.8.8");
+        assert_eq!(state.assumed_ips.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_remove_assumed_ip() {
+        let mut state = OustipState::default();
+
+        state.add_assumed_ip("8.8.8.8");
+        state.add_assumed_ip("1.1.1.1");
+        assert_eq!(state.assumed_ips.as_ref().unwrap().len(), 2);
+
+        state.remove_assumed_ip("8.8.8.8");
+        assert!(!state.is_assumed("8.8.8.8"));
+        assert!(state.is_assumed("1.1.1.1"));
+    }
+
+    #[test]
+    fn test_is_assumed_empty() {
+        let state = OustipState::default();
+        assert!(!state.is_assumed("8.8.8.8"));
+    }
+
+    #[test]
+    fn test_update_sources() {
+        let mut state = OustipState::default();
+
+        let sources = vec![
+            (
+                "firehol".to_string(),
+                50,
+                vec!["192.168.1.0/24".parse().unwrap()],
+            ),
+            (
+                "spamhaus".to_string(),
+                30,
+                vec!["10.0.0.0/8".parse().unwrap()],
+            ),
+        ];
+
+        state.update_sources(sources);
+
+        assert_eq!(state.sources.len(), 2);
+        assert_eq!(state.total_entries, 80);
+        assert!(state.last_update.is_some());
+        assert_eq!(state.sources[0].name, "firehol");
+        assert_eq!(state.sources[1].name, "spamhaus");
+    }
+
+    #[test]
+    fn test_update_sources_limits_cached_ips() {
+        let mut state = OustipState::default();
+
+        // Generate more than MAX_CACHED_IPS
+        let many_ips: Vec<IpNet> = (0..1500u32)
+            .map(|i| {
+                let a = (i % 256) as u8;
+                let b = ((i / 256) % 256) as u8;
+                format!("192.{}.{}.0/24", a, b).parse().unwrap()
+            })
+            .collect();
+
+        let sources = vec![("test".to_string(), 1500, many_ips)];
+        state.update_sources(sources);
+
+        // Should be limited to MAX_CACHED_IPS
+        assert_eq!(state.sources[0].ips.len(), OustipState::MAX_CACHED_IPS);
+    }
+
+    #[test]
+    fn test_format_duration_ago_just_now() {
+        let now = Utc::now();
+        assert_eq!(format_duration_ago(now), "just now");
+    }
+
+    #[test]
+    fn test_format_duration_ago_minutes() {
+        let past = Utc::now() - Duration::minutes(5);
+        assert_eq!(format_duration_ago(past), "5m ago");
+    }
+
+    #[test]
+    fn test_format_duration_ago_hours() {
+        let past = Utc::now() - Duration::hours(3);
+        assert_eq!(format_duration_ago(past), "3h ago");
+    }
+
+    #[test]
+    fn test_format_duration_ago_days() {
+        let past = Utc::now() - Duration::days(2);
+        assert_eq!(format_duration_ago(past), "2d ago");
+    }
+
+    #[test]
+    fn test_source_stats_serialization() {
+        let stats = SourceStats {
+            name: "firehol_level1".to_string(),
+            raw_count: 1000,
+            ip_count: 50000,
+            ips: vec!["1.2.3.0/24".to_string(), "5.6.7.0/24".to_string()],
+        };
+
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("firehol_level1"));
+        assert!(json.contains("1000"));
+
+        let parsed: SourceStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, "firehol_level1");
+        assert_eq!(parsed.ips.len(), 2);
+    }
+
+    #[test]
+    fn test_constants() {
+        assert!(STATE_FILE.starts_with("/var"));
+        assert!(STATE_FILE.ends_with(".json"));
+        assert!(STATE_BACKUP_FILE.ends_with(".bak"));
+    }
+}

@@ -315,6 +315,9 @@ mod tests {
         assert!(unit.contains("[Unit]"));
         assert!(unit.contains("[Service]"));
         assert!(unit.contains("oustip update"));
+        assert!(unit.contains("Restart=on-failure"));
+        assert!(unit.contains("CAP_NET_ADMIN"));
+        assert!(unit.contains("ProtectSystem"));
     }
 
     #[test]
@@ -322,5 +325,49 @@ mod tests {
         let unit = generate_timer_unit("6h");
         assert!(unit.contains("[Timer]"));
         assert!(unit.contains("OnUnitActiveSec=6h"));
+        assert!(unit.contains("OnBootSec=5min"));
+        assert!(unit.contains("Persistent=true"));
+    }
+
+    #[test]
+    fn test_generate_timer_unit_various_intervals() {
+        for interval in ["1h", "30m", "4h", "1d", "12h"] {
+            let unit = generate_timer_unit(interval);
+            assert!(unit.contains(&format!("OnUnitActiveSec={}", interval)));
+        }
+    }
+
+    #[test]
+    fn test_service_unit_security_hardening() {
+        let unit = generate_service_unit();
+        // Verify security hardening options are present
+        assert!(unit.contains("NoNewPrivileges=yes"));
+        assert!(unit.contains("ProtectHome=yes"));
+        assert!(unit.contains("PrivateTmp=yes"));
+        assert!(unit.contains("ReadWritePaths=/var/lib/oustip"));
+    }
+
+    #[test]
+    fn test_timer_unit_structure() {
+        let unit = generate_timer_unit("4h");
+        // Check all required sections
+        assert!(unit.contains("[Unit]"));
+        assert!(unit.contains("[Timer]"));
+        assert!(unit.contains("[Install]"));
+        assert!(unit.contains("WantedBy=timers.target"));
+    }
+
+    #[test]
+    fn test_constants() {
+        assert!(CONFIG_DIR.starts_with("/etc"));
+        assert!(CONFIG_FILE.ends_with(".yaml"));
+        assert!(STATE_DIR.starts_with("/var"));
+    }
+
+    #[test]
+    fn test_is_installed_false_by_default() {
+        // On a test system without oustip installed
+        // This test checks the function works without panicking
+        let _ = is_installed();
     }
 }

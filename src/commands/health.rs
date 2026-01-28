@@ -216,3 +216,97 @@ fn check_disk_space() -> CheckResult {
         CheckResult::pass("disk", &format!("{} MB available", free_mb))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_result_pass() {
+        let result = CheckResult::pass("test", "All good");
+        assert!(result.passed);
+        assert_eq!(result.name, "test");
+        assert_eq!(result.message, "All good");
+    }
+
+    #[test]
+    fn test_check_result_fail() {
+        let result = CheckResult::fail("test", "Something wrong");
+        assert!(!result.passed);
+        assert_eq!(result.name, "test");
+        assert_eq!(result.message, "Something wrong");
+    }
+
+    #[test]
+    fn test_health_check_serialization() {
+        let health = HealthCheck {
+            healthy: true,
+            checks: vec![
+                CheckResult::pass("config", "OK"),
+                CheckResult::pass("state", "OK"),
+            ],
+        };
+
+        let json = serde_json::to_string(&health).unwrap();
+        assert!(json.contains("\"healthy\":true"));
+        assert!(json.contains("\"config\""));
+    }
+
+    #[test]
+    fn test_check_config_missing() {
+        let result = check_config(Path::new("/nonexistent/config.yaml"));
+        assert!(!result.passed);
+        assert!(result.message.contains("not found"));
+    }
+
+    #[test]
+    fn test_check_config_invalid() {
+        // Create a temp file with invalid YAML
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("invalid_config_test.yaml");
+        std::fs::write(&temp_file, "{{invalid yaml").unwrap();
+
+        let result = check_config(&temp_file);
+        assert!(!result.passed);
+        assert!(result.message.contains("invalid") || result.message.contains("Invalid"));
+
+        std::fs::remove_file(temp_file).ok();
+    }
+
+    #[test]
+    fn test_check_disk_space() {
+        // This test should pass on most systems
+        let result = check_disk_space();
+        // Either passes with available space or fails with a clear message
+        assert!(!result.message.is_empty());
+        assert!(result.message.contains("MB") || result.message.contains("Cannot"));
+    }
+
+    #[test]
+    fn test_health_check_all_passing() {
+        let checks = [
+            CheckResult::pass("a", "OK"),
+            CheckResult::pass("b", "OK"),
+            CheckResult::pass("c", "OK"),
+        ];
+        let healthy = checks.iter().all(|c| c.passed);
+        assert!(healthy);
+    }
+
+    #[test]
+    fn test_health_check_one_failing() {
+        let checks = [
+            CheckResult::pass("a", "OK"),
+            CheckResult::fail("b", "Failed"),
+            CheckResult::pass("c", "OK"),
+        ];
+        let healthy = checks.iter().all(|c| c.passed);
+        assert!(!healthy);
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(MIN_FREE_DISK_SPACE, 100 * 1024 * 1024);
+        assert_eq!(MAX_STATE_AGE_HOURS, 24);
+    }
+}

@@ -325,4 +325,80 @@ mod tests {
         assert_eq!(AlertLevel::Warning.gotify_priority(), 5);
         assert_eq!(AlertLevel::Error.gotify_priority(), 8);
     }
+
+    #[test]
+    fn test_alert_types_update_success() {
+        let (level, title, body) = AlertTypes::update_success(1000, 50000);
+        assert!(matches!(level, AlertLevel::Info));
+        assert_eq!(title, "Blocklist Updated");
+        assert!(body.contains("1000"));
+        assert!(body.contains("50000"));
+    }
+
+    #[test]
+    fn test_alert_types_update_failed() {
+        let (level, title, body) = AlertTypes::update_failed("Connection timeout");
+        assert!(matches!(level, AlertLevel::Error));
+        assert_eq!(title, "Blocklist Update Failed");
+        assert!(body.contains("Connection timeout"));
+    }
+
+    #[test]
+    fn test_alert_types_fetch_failed() {
+        let (level, title, body) = AlertTypes::fetch_failed("firehol_level1", "404 Not Found");
+        assert!(matches!(level, AlertLevel::Warning));
+        assert!(title.contains("firehol_level1"));
+        assert!(body.contains("404 Not Found"));
+    }
+
+    #[test]
+    fn test_alert_types_outbound_to_blocked() {
+        let (level, title, body) = AlertTypes::outbound_to_blocked("192.168.1.100", "1.2.3.4");
+        assert!(matches!(level, AlertLevel::Warning));
+        assert_eq!(title, "Outbound to Blocked IP");
+        assert!(body.contains("192.168.1.100"));
+        assert!(body.contains("1.2.3.4"));
+        assert!(body.contains("compromise"));
+    }
+
+    #[test]
+    fn test_alert_types_overlap_detected() {
+        let overlaps = vec![
+            (
+                "8.8.8.8".to_string(),
+                "dns.google".to_string(),
+                vec!["firehol_level1".to_string()],
+            ),
+            (
+                "1.1.1.1".to_string(),
+                "one.one.one.one".to_string(),
+                vec!["spamhaus".to_string(), "dshield".to_string()],
+            ),
+        ];
+        let (level, title, body) = AlertTypes::overlap_detected(&overlaps);
+        assert!(matches!(level, AlertLevel::Info));
+        assert!(title.contains("Overlap"));
+        assert!(body.contains("8.8.8.8"));
+        assert!(body.contains("dns.google"));
+        assert!(body.contains("1.1.1.1"));
+        assert!(body.contains("oustip assume add"));
+    }
+
+    #[test]
+    fn test_alert_types_overlap_empty() {
+        let overlaps: Vec<(String, String, Vec<String>)> = vec![];
+        let (level, title, body) = AlertTypes::overlap_detected(&overlaps);
+        assert!(matches!(level, AlertLevel::Info));
+        assert!(!title.is_empty());
+        assert!(body.contains("allowlist"));
+    }
+
+    #[test]
+    fn test_alert_level_display() {
+        // Test all variants have non-empty string representation
+        for level in [AlertLevel::Info, AlertLevel::Warning, AlertLevel::Error] {
+            assert!(!level.as_str().is_empty());
+            assert!(level.gotify_priority() > 0);
+        }
+    }
 }

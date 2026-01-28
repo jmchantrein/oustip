@@ -316,4 +316,87 @@ table ip oustip {
         assert!(!is_safe_nft_element("1.2.3.4\n"));
         assert!(!is_safe_nft_element("$(whoami)"));
     }
+
+    #[test]
+    fn test_is_safe_nft_element_more_injections() {
+        // More injection attempts
+        assert!(!is_safe_nft_element("`id`"));
+        assert!(!is_safe_nft_element("1.2.3.4|cat /etc/passwd"));
+        assert!(!is_safe_nft_element("1.2.3.4 #comment"));
+        assert!(!is_safe_nft_element("1.2.3.4\r"));
+        // Empty string is vacuously safe (all 0 chars are valid)
+        // but would be rejected by IpNet parsing anyway
+        assert!(is_safe_nft_element(""));
+    }
+
+    #[test]
+    fn test_generate_apply_script_raw_mode() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Raw);
+
+        assert!(script.contains("table ip oustip"));
+        assert!(script.contains("type filter hook prerouting"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_conntrack_mode() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        assert!(script.contains("type filter hook input"));
+        assert!(script.contains("type filter hook forward"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_empty_ips() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec![];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should still create valid table structure
+        assert!(script.contains("table ip oustip"));
+        assert!(script.contains("set blocklist"));
+    }
+
+    #[test]
+    fn test_parse_counters_no_match() {
+        let backend = NftablesBackend::new();
+        let output = "table ip oustip {\n}\n";
+        let stats = backend.parse_counters(output);
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    #[test]
+    fn test_parse_counters_large_numbers() {
+        let backend = NftablesBackend::new();
+        let output = r#"counter packets 1234567890 bytes 9876543210"#;
+        let stats = backend.parse_counters(output);
+        assert_eq!(stats.packets_blocked, 1234567890);
+        assert_eq!(stats.bytes_blocked, 9876543210);
+    }
+
+    #[test]
+    fn test_extract_number_after_edge_cases() {
+        assert_eq!(extract_number_after("", "packets"), None);
+        assert_eq!(extract_number_after("packets", "packets"), None);
+        assert_eq!(extract_number_after("packets abc", "packets"), None);
+        assert_eq!(extract_number_after("packets 0", "packets"), Some(0));
+    }
+
+    #[test]
+    fn test_nftables_backend_new() {
+        let backend = NftablesBackend::new();
+        // Verify it can be created
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_generate_remove_script() {
+        let backend = NftablesBackend::new();
+        let script = backend.generate_remove_script();
+        assert!(script.contains("delete table ip oustip"));
+    }
 }
