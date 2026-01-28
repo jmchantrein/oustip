@@ -278,6 +278,33 @@ impl AlertTypes {
             ),
         )
     }
+
+    /// Alert for allow+block overlap detected
+    pub fn overlap_detected(
+        overlaps: &[(String, String, Vec<String>)],
+    ) -> (AlertLevel, String, String) {
+        let mut details = String::new();
+        for (ip, hostname, sources) in overlaps {
+            details.push_str(&format!(
+                "  {} ({}) - found in: {}\n",
+                ip,
+                hostname,
+                sources.join(", ")
+            ));
+        }
+
+        (
+            AlertLevel::Info,
+            "Allow+Block Overlap Detected".to_string(),
+            format!(
+                "The following IPs are in both allowlist AND blocklist:\n\n{}\n\
+                 These IPs are NOT blocked (allowlist takes precedence).\n\n\
+                 To acknowledge and stop these notifications:\n\
+                   oustip assume add <ip>",
+                details
+            ),
+        )
+    }
 }
 
 #[cfg(test)]

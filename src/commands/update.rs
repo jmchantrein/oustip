@@ -5,6 +5,8 @@ use ipnet::IpNet;
 use std::path::Path;
 use tracing::{error, info, warn};
 
+use std::net::IpAddr;
+
 use crate::aggregator::{aggregate, count_ips, subtract_allowlist};
 use crate::alerts::{AlertManager, AlertTypes};
 use crate::config::Config;
@@ -204,8 +206,13 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
     info!("Applying firewall rules...");
     backend.apply_rules(&aggregated, config.mode).await?;
 
-    // Update state
+    // Load state for overlap detection and update
     let mut state = OustipState::load().unwrap_or_default();
+
+    // Detect allow+block overlaps BEFORE updating sources (need source_stats reference)
+    let overlaps = detect_overlaps(&allowlist, &source_stats, &state).await;
+
+    // Now update state (takes ownership of source_stats)
     state.update_sources(source_stats);
     state.save()?;
 
@@ -217,12 +224,38 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
 
     // Send alerts for fetch errors
     if !fetch_errors.is_empty() {
-        if let Ok(alert_manager) = AlertManager::new(config.alerts) {
-            for (source, error) in fetch_errors {
-                let (level, title, msg) = AlertTypes::fetch_failed(&source, &error);
+        if let Ok(alert_manager) = AlertManager::new(config.alerts.clone()) {
+            for (source, error) in &fetch_errors {
+                let (level, title, msg) = AlertTypes::fetch_failed(source, error);
                 alert_manager.send(level, &title, &msg).await;
             }
         }
+    }
+
+    // Notify about detected overlaps (excluding assumed IPs)
+    if !overlaps.is_empty() {
+        info!(
+            "Detected {} allow+block overlap(s) (not in assume list)",
+            overlaps.len()
+        );
+
+        if let Ok(alert_manager) = AlertManager::new(config.alerts) {
+            let (level, title, msg) = AlertTypes::overlap_detected(&overlaps);
+            alert_manager.send(level, &title, &msg).await;
+        }
+
+        println!();
+        println!(
+            "[INFO] {} IP(s) are in both allowlist AND blocklist:",
+            overlaps.len()
+        );
+        for (ip, hostname, sources) in &overlaps {
+            println!("  {} ({}) - found in: {}", ip, hostname, sources.join(", "));
+        }
+        println!();
+        println!("  These IPs are NOT blocked (allowlist takes precedence).");
+        println!("  To acknowledge and stop these notifications:");
+        println!("    oustip assume add <ip>");
     }
 
     println!();
@@ -233,4 +266,66 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
     );
 
     Ok(())
+}
+
+/// Detect IPs that are in both allowlist and blocklist (excluding assumed IPs)
+/// Returns: Vec<(ip_string, hostname, sources_where_found)>
+async fn detect_overlaps(
+    allowlist_ips: &[IpNet],
+    source_stats: &[(String, usize, Vec<IpNet>)],
+    state: &OustipState,
+) -> Vec<(String, String, Vec<String>)> {
+    let mut overlaps = Vec::new();
+
+    // For each allowlist IP, check if it's in any blocklist source
+    for allow_ip in allowlist_ips {
+        // Check if this allowlist entry overlaps with any blocklist entry
+        let mut found_in_sources: Vec<String> = Vec::new();
+
+        for (source_name, _, source_ips) in source_stats {
+            for block_ip in source_ips {
+                if networks_overlap(allow_ip, block_ip) && !found_in_sources.contains(source_name) {
+                    found_in_sources.push(source_name.clone());
+                }
+            }
+        }
+
+        if !found_in_sources.is_empty() {
+            let ip_str = allow_ip.to_string();
+
+            // Skip if this IP is in the assume list
+            if state.is_assumed(&ip_str) {
+                continue;
+            }
+
+            // Also check if the network address (without prefix) is assumed
+            let addr_str = allow_ip.addr().to_string();
+            if state.is_assumed(&addr_str) {
+                continue;
+            }
+
+            // Resolve DNS for this IP
+            let hostname = resolve_ip_for_overlap(allow_ip.addr()).await;
+
+            overlaps.push((ip_str, hostname, found_in_sources));
+        }
+    }
+
+    // Limit to first 20 overlaps to avoid notification spam
+    overlaps.truncate(20);
+    overlaps
+}
+
+/// Check if two IP networks overlap
+fn networks_overlap(a: &IpNet, b: &IpNet) -> bool {
+    // Check if either contains the other's network address
+    a.contains(&b.addr()) || b.contains(&a.addr())
+}
+
+/// Resolve IP address to hostname via reverse DNS
+async fn resolve_ip_for_overlap(ip: IpAddr) -> String {
+    match tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip)).await {
+        Ok(Ok(hostname)) => hostname,
+        _ => "(no PTR)".to_string(),
+    }
 }

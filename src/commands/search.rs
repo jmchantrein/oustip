@@ -81,7 +81,10 @@ pub async fn run(ip_str: &str, show_dns: bool, config_path: &Path) -> Result<()>
     println!();
 
     if in_blocklist {
-        println!("[BLOCKLIST] Found in {} blocklist(s):", blocklist_sources.len());
+        println!(
+            "[BLOCKLIST] Found in {} blocklist(s):",
+            blocklist_sources.len()
+        );
         for source in &blocklist_sources {
             println!("  - {}", source);
         }

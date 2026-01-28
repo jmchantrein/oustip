@@ -40,7 +40,10 @@ async fn enable_blocklist(name: &str, config_path: &Path) -> Result<()> {
     match idx {
         Some(i) => {
             if config.blocklists[i].enabled {
-                println!("Blocklist '{}' is already enabled", config.blocklists[i].name);
+                println!(
+                    "Blocklist '{}' is already enabled",
+                    config.blocklists[i].name
+                );
             } else {
                 let blocklist_name = config.blocklists[i].name.clone();
                 config.blocklists[i].enabled = true;
@@ -82,7 +85,10 @@ async fn disable_blocklist(name: &str, config_path: &Path) -> Result<()> {
     match idx {
         Some(i) => {
             if !config.blocklists[i].enabled {
-                println!("Blocklist '{}' is already disabled", config.blocklists[i].name);
+                println!(
+                    "Blocklist '{}' is already disabled",
+                    config.blocklists[i].name
+                );
             } else {
                 let blocklist_name = config.blocklists[i].name.clone();
                 config.blocklists[i].enabled = false;
