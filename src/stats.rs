@@ -4,6 +4,7 @@ use crate::aggregator::{count_ips, coverage_percent};
 use crate::config::Config;
 use crate::enforcer::create_backend;
 use crate::fetcher::format_count;
+use crate::utils::{format_bytes, truncate};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Utc};
 use ipnet::IpNet;
@@ -267,23 +268,6 @@ pub async fn display_stats(config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Format bytes in human-readable form
-fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
 /// Format duration since a timestamp
 fn format_duration_ago(dt: DateTime<Utc>) -> String {
     let now = Utc::now();
@@ -298,33 +282,5 @@ fn format_duration_ago(dt: DateTime<Utc>) -> String {
         format!("{}h ago", seconds / 3600)
     } else {
         format!("{}d ago", seconds / 86400)
-    }
-}
-
-/// Truncate a string to a maximum length
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len - 3])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(format_bytes(500), "500 B");
-        assert_eq!(format_bytes(1500), "1.5 KB");
-        assert_eq!(format_bytes(1_500_000), "1.4 MB");
-        assert_eq!(format_bytes(1_500_000_000), "1.4 GB");
-    }
-
-    #[test]
-    fn test_truncate() {
-        assert_eq!(truncate("short", 10), "short");
-        assert_eq!(truncate("this is a long string", 10), "this is...");
     }
 }

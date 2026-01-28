@@ -105,6 +105,7 @@
 //! - [`lock`] - File locking for concurrent execution prevention
 //! - [`signal`] - Graceful shutdown signal handling
 //! - [`stats`] - State persistence and statistics
+//! - [`utils`] - Common utility functions (formatting, truncation)
 
 pub mod aggregator;
 pub mod alerts;
@@ -118,6 +119,7 @@ pub mod installer;
 pub mod lock;
 pub mod signal;
 pub mod stats;
+pub mod utils;
 
 pub use cli::{AllowlistAction, Cli, Commands, Ipv6Action};
 pub use config::Config;

@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::enforcer::create_backend;
 use crate::fetcher::format_count;
 use crate::stats::OustipState;
+use crate::utils::{format_bytes, truncate};
 
 /// Report output format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -401,30 +402,4 @@ fn format_markdown(report: &Report) -> String {
     }
 
     out
-}
-
-/// Format bytes in human-readable form
-fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
-/// Truncate a string to max length
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len - 3])
-    }
 }

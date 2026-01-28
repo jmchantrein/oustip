@@ -169,12 +169,10 @@ async fn show_blocklist(name: &str, dns: bool, limit: usize, config_path: &Path)
         .iter()
         .find(|b| b.name.eq_ignore_ascii_case(name));
 
-    if blocklist.is_none() {
+    let Some(blocklist) = blocklist else {
         println!("Blocklist '{}' not found.", name);
         anyhow::bail!("Blocklist not found");
-    }
-
-    let blocklist = blocklist.unwrap();
+    };
 
     // Find stats for this blocklist
     let source = state.sources.iter().find(|s| s.name == blocklist.name);

@@ -15,6 +15,8 @@ src/
 ├── lock.rs                 # File-based locking (concurrent execution prevention)
 ├── signal.rs               # Signal handling (graceful shutdown)
 ├── installer.rs            # Installation/uninstallation logic
+├── dns.rs                  # DNS resolution utilities with timeout
+├── utils.rs                # Common utilities (format_bytes, truncate)
 ├── enforcer/
 │   ├── mod.rs              # Firewall backend trait and factory
 │   ├── iptables.rs         # iptables backend implementation
@@ -33,6 +35,8 @@ src/
     ├── search.rs           # oustip search
     ├── assume.rs           # oustip assume *
     ├── ipv6.rs             # oustip ipv6 *
+    ├── health.rs           # oustip health (monitoring integration)
+    ├── report.rs           # oustip report (JSON/text/markdown reports)
     └── uninstall.rs        # oustip uninstall
 ```
 
@@ -176,6 +180,21 @@ main()
     │   ├── status -> read sysctl
     │   ├── enable -> write sysctl
     │   └── disable -> write sysctl
+    │
+    ├── health [--json]
+    │   ├── check_config() -> validate config file
+    │   ├── check_state_file() -> freshness check
+    │   ├── check_firewall_active() -> rules loaded
+    │   ├── check_disk_space() -> /var/lib/oustip
+    │   └── output as text or JSON (for monitoring)
+    │
+    ├── report [--format] [--send] [--top]
+    │   ├── Config::load()
+    │   ├── OustipState::load()
+    │   ├── create_backend()
+    │   ├── backend.get_stats()
+    │   ├── format_report() -> text/json/markdown
+    │   └── [if --send] AlertManager::send_report()
     │
     └── uninstall
         ├── check_root()
@@ -331,23 +350,47 @@ cargo modules generate graph | dot -Tpng > modules.png
 ## Testing Strategy
 
 ```
-Unit Tests (37 total)
-├── aggregator::tests (5)
-│   ├── test_aggregate_contiguous
-│   ├── test_aggregate_non_contiguous
-│   ├── test_count_ips
-│   ├── test_deduplicate
-│   └── test_subtract_allowlist
+Unit Tests (85+ total)
+├── aggregator::tests (8 unit + 8 proptest)
 ├── alerts::tests (2)
+├── cli::tests (16)
+├── commands::check::tests (7)
 ├── config::tests (14)
+├── dns::tests (3)
 ├── enforcer::iptables::tests (2)
 ├── enforcer::nftables::tests (4)
-├── fetcher::tests (4)
+├── fetcher::tests (10 unit + 5 proptest)
 ├── installer::tests (2)
 ├── lock::tests (1)
 ├── signal::tests (2)
-└── stats::tests (2)
+└── utils::tests (4)
 
-Integration Tests (requires root)
-└── cargo test --all-features -- --include-ignored
+Integration Tests (tests/integration.rs)
+├── test_version_command
+├── test_help_command
+├── test_status_command (#[ignore] - root)
+├── test_update_dry_run (#[ignore] - root)
+├── test_health_check (#[ignore] - root)
+├── test_check_invalid_ip
+├── test_search_invalid_ip
+├── test_blocklist_list_without_config
+└── test_concurrent_execution_lock (#[ignore] - root)
+
+Robustness Tests (tests/robustness.rs)
+├── Network timeout handling
+├── Unicode/malformed input handling
+├── Large input handling (100K+ IPs)
+├── Concurrent operations (race conditions)
+└── YAML/JSON parsing edge cases
+
+Benchmarks (benches/aggregation.rs)
+├── bench_aggregate (100-50K IPs)
+├── bench_deduplicate (100-10K IPs)
+└── bench_parse_blocklist (100-10K entries)
+
+Run commands:
+  cargo test                              # Unit tests
+  sudo cargo test -- --ignored            # Integration tests
+  cargo test --test robustness            # Robustness tests
+  cargo bench                             # Benchmarks
 ```
