@@ -150,4 +150,53 @@ mod tests {
         token.cancel();
         assert!(token.is_cancelled());
     }
+
+    #[test]
+    fn test_shutdown_token_clone() {
+        let token1 = ShutdownToken::new();
+        let token2 = token1.clone();
+
+        assert!(!token1.is_cancelled());
+        assert!(!token2.is_cancelled());
+
+        token1.cancel();
+
+        assert!(token1.is_cancelled());
+        assert!(token2.is_cancelled());
+    }
+
+    #[test]
+    fn test_shutdown_token_default() {
+        let token = ShutdownToken::default();
+        assert!(!token.is_cancelled());
+    }
+
+    #[test]
+    fn test_shutdown_token_inherits_global() {
+        reset_shutdown();
+        let token = ShutdownToken::new();
+        assert!(!token.is_cancelled());
+
+        request_shutdown();
+        assert!(token.is_cancelled());
+
+        reset_shutdown();
+    }
+
+    #[test]
+    fn test_multiple_cancels() {
+        let token = ShutdownToken::new();
+        token.cancel();
+        token.cancel();
+        token.cancel();
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn test_reset_global_shutdown() {
+        request_shutdown();
+        assert!(is_shutdown_requested());
+        reset_shutdown();
+        assert!(!is_shutdown_requested());
+    }
 }

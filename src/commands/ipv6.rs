@@ -108,3 +108,68 @@ async fn show_ipv6_status() -> Result<()> {
 
     Ok(())
 }
+
+/// Generate sysctl config content for disabling IPv6
+pub fn generate_ipv6_disable_config() -> &'static str {
+    r#"# OustIP IPv6 configuration
+# Disable IPv6 on all interfaces
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+"#
+}
+
+/// Check if sysctl value indicates IPv6 is disabled
+pub fn is_ipv6_disabled(sysctl_value: &str) -> bool {
+    sysctl_value.trim() == "1"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sysctl_conf_path() {
+        assert_eq!(SYSCTL_CONF, "/etc/sysctl.d/99-oustip-ipv6.conf");
+    }
+
+    #[test]
+    fn test_generate_ipv6_disable_config_contains_settings() {
+        let config = generate_ipv6_disable_config();
+        assert!(config.contains("net.ipv6.conf.all.disable_ipv6 = 1"));
+        assert!(config.contains("net.ipv6.conf.default.disable_ipv6 = 1"));
+    }
+
+    #[test]
+    fn test_generate_ipv6_disable_config_has_comments() {
+        let config = generate_ipv6_disable_config();
+        assert!(config.contains("# OustIP"));
+        assert!(config.contains("# Disable IPv6"));
+    }
+
+    #[test]
+    fn test_is_ipv6_disabled_true() {
+        assert!(is_ipv6_disabled("1"));
+        assert!(is_ipv6_disabled("1\n"));
+        assert!(is_ipv6_disabled(" 1 "));
+    }
+
+    #[test]
+    fn test_is_ipv6_disabled_false() {
+        assert!(!is_ipv6_disabled("0"));
+        assert!(!is_ipv6_disabled("0\n"));
+        assert!(!is_ipv6_disabled(" 0 "));
+    }
+
+    #[test]
+    fn test_is_ipv6_disabled_empty() {
+        assert!(!is_ipv6_disabled(""));
+    }
+
+    #[test]
+    fn test_is_ipv6_disabled_garbage() {
+        assert!(!is_ipv6_disabled("enabled"));
+        assert!(!is_ipv6_disabled("disabled"));
+        assert!(!is_ipv6_disabled("yes"));
+        assert!(!is_ipv6_disabled("no"));
+    }
+}

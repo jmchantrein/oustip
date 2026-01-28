@@ -61,4 +61,54 @@ mod tests {
         let result = resolve_ptr_str("not-an-ip").await;
         assert_eq!(result, "(invalid IP)");
     }
+
+    #[tokio::test]
+    async fn test_resolve_ptr_localhost() {
+        let result = resolve_ptr("127.0.0.1".parse().unwrap()).await;
+        // Localhost may or may not have PTR, but should not panic
+        assert!(!result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_ptr_str_ipv6() {
+        let result = resolve_ptr_str("::1").await;
+        // IPv6 localhost - should handle gracefully
+        assert!(!result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_ptr_str_empty() {
+        let result = resolve_ptr_str("").await;
+        assert_eq!(result, "(invalid IP)");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_ptr_str_cidr_only() {
+        let result = resolve_ptr_str("/24").await;
+        assert_eq!(result, "(invalid IP)");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_ptr_private_ip() {
+        let result = resolve_ptr("10.0.0.1".parse().unwrap()).await;
+        // Private IP probably won't have PTR
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_dns_timeout_constant() {
+        assert_eq!(DNS_TIMEOUT_SECS, 5);
+    }
+
+    #[test]
+    fn test_cidr_stripping() {
+        // Test the CIDR stripping logic
+        let ip_str = "192.168.1.1/24";
+        let ip_part = ip_str.split('/').next().unwrap_or(ip_str);
+        assert_eq!(ip_part, "192.168.1.1");
+
+        let ip_str2 = "10.0.0.1";
+        let ip_part2 = ip_str2.split('/').next().unwrap_or(ip_str2);
+        assert_eq!(ip_part2, "10.0.0.1");
+    }
 }

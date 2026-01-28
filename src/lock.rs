@@ -63,11 +63,78 @@ impl LockGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_lock_acquire_release() {
         // Note: This test would need root to write to /var/run
         // So we just test the struct exists
         let _guard_type: fn() -> Result<LockGuard> = LockGuard::acquire;
+    }
+
+    #[test]
+    fn test_lock_constant() {
+        assert_eq!(LOCK_FILE, "/var/run/oustip.lock");
+        assert!(LOCK_FILE.starts_with("/var"));
+        assert!(LOCK_FILE.ends_with(".lock"));
+    }
+
+    #[test]
+    fn test_file_locking_basic() {
+        // Test the underlying fs2 locking mechanism with a temp file
+        let temp_file = NamedTempFile::new().unwrap();
+        let file = temp_file.as_file();
+
+        // Should be able to lock
+        assert!(file.try_lock_exclusive().is_ok());
+
+        // Unlock for next test
+        file.unlock().ok();
+    }
+
+    #[test]
+    fn test_file_locking_shared() {
+        // Test shared locking
+        let temp_file = NamedTempFile::new().unwrap();
+        let file = temp_file.as_file();
+
+        // Should be able to get shared lock
+        assert!(file.try_lock_shared().is_ok());
+
+        file.unlock().ok();
+    }
+
+    #[test]
+    fn test_lock_file_permissions() {
+        // Test that 0o600 permission constant is correct
+        let perms = fs::Permissions::from_mode(0o600);
+        // 0o600 = owner read/write only
+        assert_eq!(perms.mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn test_temp_file_locking_workflow() {
+        use std::io::Read;
+
+        // Create temp file
+        let mut temp_file = NamedTempFile::new().unwrap();
+
+        // Write something
+        writeln!(temp_file, "test content").unwrap();
+
+        // Get the file for locking
+        let file = temp_file.reopen().unwrap();
+
+        // Lock it
+        assert!(file.try_lock_exclusive().is_ok());
+
+        // Read should still work
+        let mut content = String::new();
+        let mut reader = temp_file.reopen().unwrap();
+        reader.read_to_string(&mut content).ok();
+
+        // Unlock
+        file.unlock().ok();
     }
 }

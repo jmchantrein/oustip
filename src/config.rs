@@ -668,4 +668,193 @@ headers:
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("HTTPS"));
     }
+
+    #[test]
+    fn test_config_validation_webhook_http_rejected() {
+        let config = Config {
+            alerts: AlertsConfig {
+                webhook: WebhookConfig {
+                    enabled: true,
+                    url: "http://example.com/webhook".to_string(),
+                    headers: HashMap::new(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Webhook"));
+    }
+
+    #[test]
+    fn test_config_validation_gotify_http_rejected() {
+        let config = Config {
+            alerts: AlertsConfig {
+                gotify: GotifyConfig {
+                    enabled: true,
+                    url: "http://gotify.example.com".to_string(),
+                    token: SecureString::new("token".to_string()),
+                    token_env: None,
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Gotify"));
+    }
+
+    #[test]
+    fn test_config_validation_valid() {
+        let config = Config::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_secure_string_from_str() {
+        let secure: SecureString = "test".into();
+        assert_eq!(secure.as_str(), "test");
+    }
+
+    #[test]
+    fn test_secure_string_from_string() {
+        let secure: SecureString = String::from("test").into();
+        assert_eq!(secure.as_str(), "test");
+    }
+
+    #[test]
+    fn test_backend_default() {
+        assert_eq!(Backend::default(), Backend::Nftables);
+    }
+
+    #[test]
+    fn test_filter_mode_default() {
+        assert_eq!(FilterMode::default(), FilterMode::Conntrack);
+    }
+
+    #[test]
+    fn test_ipv6_boot_state_default() {
+        assert_eq!(Ipv6BootState::default(), Ipv6BootState::Unchanged);
+    }
+
+    #[test]
+    fn test_auto_allowlist_default() {
+        let aal = AutoAllowlist::default();
+        assert!(aal.cloudflare);
+        assert!(aal.github);
+        assert!(!aal.google_cloud);
+        assert!(!aal.aws);
+        assert!(!aal.fastly);
+    }
+
+    #[test]
+    fn test_default_blocklists_has_expected_entries() {
+        let blocklists = default_blocklists();
+        assert_eq!(blocklists.len(), 7);
+
+        let names: Vec<&str> = blocklists.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"spamhaus_drop"));
+        assert!(names.contains(&"spamhaus_edrop"));
+        assert!(names.contains(&"dshield"));
+        assert!(names.contains(&"firehol_level1"));
+    }
+
+    #[test]
+    fn test_default_allowlist_has_rfc1918() {
+        let allowlist = default_allowlist();
+        assert!(allowlist.contains(&"192.168.0.0/16".to_string()));
+        assert!(allowlist.contains(&"10.0.0.0/8".to_string()));
+        assert!(allowlist.contains(&"172.16.0.0/12".to_string()));
+        assert!(allowlist.contains(&"127.0.0.0/8".to_string()));
+    }
+
+    #[test]
+    fn test_get_preset_lists_minimal() {
+        let lists = get_preset_lists("minimal").unwrap();
+        assert_eq!(lists.len(), 3);
+        assert!(lists.contains(&"spamhaus_drop"));
+    }
+
+    #[test]
+    fn test_get_preset_lists_recommended() {
+        let lists = get_preset_lists("recommended").unwrap();
+        assert_eq!(lists.len(), 5);
+    }
+
+    #[test]
+    fn test_get_preset_lists_full() {
+        let lists = get_preset_lists("full").unwrap();
+        assert_eq!(lists.len(), 6);
+    }
+
+    #[test]
+    fn test_get_preset_lists_paranoid() {
+        let lists = get_preset_lists("paranoid").unwrap();
+        assert_eq!(lists.len(), 7);
+    }
+
+    #[test]
+    fn test_get_preset_lists_unknown() {
+        let lists = get_preset_lists("unknown");
+        assert!(lists.is_none());
+    }
+
+    #[test]
+    fn test_valid_presets_constant() {
+        assert!(VALID_PRESETS.contains(&"minimal"));
+        assert!(VALID_PRESETS.contains(&"recommended"));
+        assert!(VALID_PRESETS.contains(&"full"));
+        assert!(VALID_PRESETS.contains(&"paranoid"));
+        assert_eq!(VALID_PRESETS.len(), 4);
+    }
+
+    #[test]
+    fn test_config_disabled_blocklist_http_allowed() {
+        // HTTP URLs are allowed for disabled blocklists
+        let mut blocklists = default_blocklists();
+        blocklists[5].url = "http://example.com/list".to_string(); // firehol_level3 is disabled
+        let config = Config {
+            blocklists,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_webhook_config_default() {
+        let config = WebhookConfig::default();
+        assert!(!config.enabled);
+        assert!(config.url.is_empty());
+        assert!(config.headers.is_empty());
+    }
+
+    #[test]
+    fn test_email_config_default() {
+        let config = EmailConfig::default();
+        assert!(!config.enabled);
+        assert!(config.smtp_host.is_empty());
+        assert_eq!(config.smtp_port, 0);
+    }
+
+    #[test]
+    fn test_gotify_config_default() {
+        let config = GotifyConfig::default();
+        assert!(!config.enabled);
+        assert!(config.url.is_empty());
+        assert!(config.token.is_empty());
+    }
+
+    #[test]
+    fn test_blocklist_source_structure() {
+        let source = BlocklistSource {
+            name: "test".to_string(),
+            url: "https://example.com".to_string(),
+            enabled: true,
+        };
+        assert_eq!(source.name, "test");
+        assert!(source.url.starts_with("https://"));
+        assert!(source.enabled);
+    }
 }

@@ -121,3 +121,123 @@ pub async fn run(ip_str: &str, show_dns: bool, config_path: &Path) -> Result<()>
 
     Ok(())
 }
+
+/// Check if an IP is contained in a CIDR network
+pub fn ip_in_network(ip: IpAddr, network: &str) -> bool {
+    if let Ok(net) = network.parse::<IpNet>() {
+        net.contains(&ip)
+    } else {
+        false
+    }
+}
+
+/// Find matching blocklist sources for an IP
+pub fn find_blocklist_sources(ip: IpAddr, sources: &[crate::stats::SourceStats]) -> Vec<String> {
+    let ip_net = IpNet::from(ip);
+    let mut result = Vec::new();
+
+    for source in sources {
+        for blocked_ip in &source.ips {
+            if let Ok(net) = blocked_ip.parse::<IpNet>() {
+                if (net.contains(&ip) || ip_net.contains(&net.network()))
+                    && !result.contains(&source.name)
+                {
+                    result.push(source.name.clone());
+                }
+            }
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ip_in_network_contained() {
+        let ip: IpAddr = "192.168.1.100".parse().unwrap();
+        assert!(ip_in_network(ip, "192.168.0.0/16"));
+        assert!(ip_in_network(ip, "192.168.1.0/24"));
+        assert!(ip_in_network(ip, "192.168.1.100/32"));
+    }
+
+    #[test]
+    fn test_ip_in_network_not_contained() {
+        let ip: IpAddr = "192.168.1.100".parse().unwrap();
+        assert!(!ip_in_network(ip, "10.0.0.0/8"));
+        assert!(!ip_in_network(ip, "192.168.2.0/24"));
+    }
+
+    #[test]
+    fn test_ip_in_network_invalid() {
+        let ip: IpAddr = "192.168.1.100".parse().unwrap();
+        assert!(!ip_in_network(ip, "invalid"));
+        assert!(!ip_in_network(ip, ""));
+    }
+
+    #[test]
+    fn test_find_blocklist_sources_empty() {
+        let ip: IpAddr = "8.8.8.8".parse().unwrap();
+        let sources: Vec<crate::stats::SourceStats> = vec![];
+        let result = find_blocklist_sources(ip, &sources);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_find_blocklist_sources_found() {
+        let ip: IpAddr = "192.168.1.100".parse().unwrap();
+        let sources = vec![crate::stats::SourceStats {
+            name: "test_list".to_string(),
+            raw_count: 1,
+            ip_count: 256,
+            ips: vec!["192.168.1.0/24".to_string()],
+        }];
+        let result = find_blocklist_sources(ip, &sources);
+        assert_eq!(result, vec!["test_list"]);
+    }
+
+    #[test]
+    fn test_find_blocklist_sources_not_found() {
+        let ip: IpAddr = "8.8.8.8".parse().unwrap();
+        let sources = vec![crate::stats::SourceStats {
+            name: "test_list".to_string(),
+            raw_count: 1,
+            ip_count: 256,
+            ips: vec!["192.168.1.0/24".to_string()],
+        }];
+        let result = find_blocklist_sources(ip, &sources);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_find_blocklist_sources_multiple() {
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        let sources = vec![
+            crate::stats::SourceStats {
+                name: "list1".to_string(),
+                raw_count: 1,
+                ip_count: 256,
+                ips: vec!["10.0.0.0/8".to_string()],
+            },
+            crate::stats::SourceStats {
+                name: "list2".to_string(),
+                raw_count: 1,
+                ip_count: 256,
+                ips: vec!["10.0.0.0/24".to_string()],
+            },
+        ];
+        let result = find_blocklist_sources(ip, &sources);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"list1".to_string()));
+        assert!(result.contains(&"list2".to_string()));
+    }
+
+    #[test]
+    fn test_ip_parsing() {
+        assert!("192.168.1.1".parse::<IpAddr>().is_ok());
+        assert!("::1".parse::<IpAddr>().is_ok());
+        assert!("invalid".parse::<IpAddr>().is_err());
+    }
+}

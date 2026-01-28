@@ -232,3 +232,60 @@ fn format_count(n: usize) -> String {
     }
     result.chars().rev().collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_count_zero() {
+        assert_eq!(format_count(0), "0");
+    }
+
+    #[test]
+    fn test_format_count_single_digit() {
+        assert_eq!(format_count(5), "5");
+    }
+
+    #[test]
+    fn test_format_count_double_digit() {
+        assert_eq!(format_count(42), "42");
+    }
+
+    #[test]
+    fn test_format_count_triple_digit() {
+        assert_eq!(format_count(999), "999");
+    }
+
+    #[test]
+    fn test_format_count_thousands() {
+        assert_eq!(format_count(1000), "1,000");
+        assert_eq!(format_count(1234), "1,234");
+        assert_eq!(format_count(9999), "9,999");
+    }
+
+    #[test]
+    fn test_format_count_ten_thousands() {
+        assert_eq!(format_count(10000), "10,000");
+        assert_eq!(format_count(12345), "12,345");
+        assert_eq!(format_count(99999), "99,999");
+    }
+
+    #[test]
+    fn test_format_count_hundred_thousands() {
+        assert_eq!(format_count(100000), "100,000");
+        assert_eq!(format_count(123456), "123,456");
+    }
+
+    #[test]
+    fn test_format_count_millions() {
+        assert_eq!(format_count(1000000), "1,000,000");
+        assert_eq!(format_count(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn test_format_count_billions() {
+        assert_eq!(format_count(1000000000), "1,000,000,000");
+        assert_eq!(format_count(1234567890), "1,234,567,890");
+    }
+}

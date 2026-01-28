@@ -370,4 +370,106 @@ mod tests {
         // This test checks the function works without panicking
         let _ = is_installed();
     }
+
+    // validate_preset tests
+    #[test]
+    fn test_validate_preset_valid() {
+        assert!(validate_preset("minimal").is_ok());
+        assert!(validate_preset("recommended").is_ok());
+        assert!(validate_preset("full").is_ok());
+        assert!(validate_preset("paranoid").is_ok());
+    }
+
+    #[test]
+    fn test_validate_preset_invalid() {
+        assert!(validate_preset("invalid").is_err());
+        assert!(validate_preset("").is_err());
+        assert!(validate_preset("MINIMAL").is_err()); // case sensitive
+        assert!(validate_preset("custom").is_err());
+    }
+
+    #[test]
+    fn test_validate_preset_injection_attempts() {
+        assert!(validate_preset("minimal; rm -rf /").is_err());
+        assert!(validate_preset("$(whoami)").is_err());
+        assert!(validate_preset("`ls`").is_err());
+    }
+
+    // validate_interval tests
+    #[test]
+    fn test_validate_interval_valid() {
+        assert!(validate_interval("30s").is_ok());
+        assert!(validate_interval("5m").is_ok());
+        assert!(validate_interval("4h").is_ok());
+        assert!(validate_interval("1d").is_ok());
+        assert!(validate_interval("100s").is_ok());
+    }
+
+    #[test]
+    fn test_validate_interval_invalid_suffix() {
+        assert!(validate_interval("30x").is_err());
+        assert!(validate_interval("5w").is_err()); // weeks not supported
+        assert!(validate_interval("4y").is_err()); // years not supported
+    }
+
+    #[test]
+    fn test_validate_interval_invalid_number() {
+        assert!(validate_interval("abch").is_err());
+        assert!(validate_interval("-5h").is_err());
+        assert!(validate_interval("3.5h").is_err()); // no decimals
+    }
+
+    #[test]
+    fn test_validate_interval_empty() {
+        assert!(validate_interval("").is_err());
+    }
+
+    #[test]
+    fn test_validate_interval_too_short() {
+        assert!(validate_interval("h").is_err());
+        assert!(validate_interval("5").is_err());
+    }
+
+    #[test]
+    fn test_validate_interval_unicode() {
+        assert!(validate_interval("５h").is_err()); // fullwidth 5
+        assert!(validate_interval("4ℎ").is_err()); // unicode h
+    }
+
+    #[test]
+    fn test_validate_interval_injection_attempts() {
+        assert!(validate_interval("4h; rm -rf /").is_err());
+        assert!(validate_interval("$(whoami)h").is_err());
+        assert!(validate_interval("4h\nExec=malicious").is_err());
+    }
+
+    #[test]
+    fn test_valid_presets_constant() {
+        assert!(VALID_PRESETS.contains(&"minimal"));
+        assert!(VALID_PRESETS.contains(&"recommended"));
+        assert!(VALID_PRESETS.contains(&"full"));
+        assert!(VALID_PRESETS.contains(&"paranoid"));
+        assert_eq!(VALID_PRESETS.len(), 4);
+    }
+
+    #[test]
+    fn test_service_unit_restart_limits() {
+        let unit = generate_service_unit();
+        assert!(unit.contains("RestartSec=5min"));
+        assert!(unit.contains("StartLimitBurst=3"));
+        assert!(unit.contains("StartLimitIntervalSec=1h"));
+    }
+
+    #[test]
+    fn test_service_unit_capabilities() {
+        let unit = generate_service_unit();
+        assert!(unit.contains("CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW"));
+        assert!(unit.contains("AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW"));
+    }
+
+    #[test]
+    fn test_timer_unit_persistent() {
+        let unit = generate_timer_unit("1h");
+        assert!(unit.contains("Persistent=true"));
+    }
 }

@@ -403,3 +403,343 @@ fn format_markdown(report: &Report) -> String {
 
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_report_format_from_str_text() {
+        assert_eq!("text".parse::<ReportFormat>().unwrap(), ReportFormat::Text);
+        assert_eq!("txt".parse::<ReportFormat>().unwrap(), ReportFormat::Text);
+        assert_eq!("TEXT".parse::<ReportFormat>().unwrap(), ReportFormat::Text);
+    }
+
+    #[test]
+    fn test_report_format_from_str_json() {
+        assert_eq!("json".parse::<ReportFormat>().unwrap(), ReportFormat::Json);
+        assert_eq!("JSON".parse::<ReportFormat>().unwrap(), ReportFormat::Json);
+    }
+
+    #[test]
+    fn test_report_format_from_str_markdown() {
+        assert_eq!(
+            "markdown".parse::<ReportFormat>().unwrap(),
+            ReportFormat::Markdown
+        );
+        assert_eq!("md".parse::<ReportFormat>().unwrap(), ReportFormat::Markdown);
+        assert_eq!(
+            "MARKDOWN".parse::<ReportFormat>().unwrap(),
+            ReportFormat::Markdown
+        );
+    }
+
+    #[test]
+    fn test_report_format_from_str_invalid() {
+        assert!("xml".parse::<ReportFormat>().is_err());
+        assert!("csv".parse::<ReportFormat>().is_err());
+        assert!("".parse::<ReportFormat>().is_err());
+    }
+
+    #[test]
+    fn test_report_serialization() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "test-host".to_string(),
+            status: StatusInfo {
+                active: true,
+                backend: "nftables".to_string(),
+                entries_in_set: 1000,
+                last_update: Some(Utc::now()),
+            },
+            blocking: BlockingStats {
+                packets_blocked: 5000,
+                bytes_blocked: 1_000_000,
+                bytes_blocked_human: "1.0 MB".to_string(),
+            },
+            sources: vec![SourceInfo {
+                name: "firehol".to_string(),
+                ip_count: 5000,
+                raw_count: 100,
+            }],
+            top_blocked: vec![TopBlockedIp {
+                ip: "1.2.3.4".to_string(),
+                count: 100,
+                hostname: None,
+            }],
+        };
+
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("test-host"));
+        assert!(json.contains("nftables"));
+        assert!(json.contains("firehol"));
+    }
+
+    #[test]
+    fn test_format_text_contains_sections() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "myhost".to_string(),
+            status: StatusInfo {
+                active: true,
+                backend: "nftables".to_string(),
+                entries_in_set: 500,
+                last_update: None,
+            },
+            blocking: BlockingStats {
+                packets_blocked: 100,
+                bytes_blocked: 5000,
+                bytes_blocked_human: "5.0 KB".to_string(),
+            },
+            sources: vec![],
+            top_blocked: vec![],
+        };
+
+        let text = format_text(&report);
+        assert!(text.contains("OUSTIP REPORT"));
+        assert!(text.contains("myhost"));
+        assert!(text.contains("STATUS"));
+        assert!(text.contains("BLOCKING STATISTICS"));
+        assert!(text.contains("Active:"));
+        assert!(text.contains("YES"));
+    }
+
+    #[test]
+    fn test_format_text_inactive_status() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "host".to_string(),
+            status: StatusInfo {
+                active: false,
+                backend: "iptables".to_string(),
+                entries_in_set: 0,
+                last_update: None,
+            },
+            blocking: BlockingStats {
+                packets_blocked: 0,
+                bytes_blocked: 0,
+                bytes_blocked_human: "0 B".to_string(),
+            },
+            sources: vec![],
+            top_blocked: vec![],
+        };
+
+        let text = format_text(&report);
+        assert!(text.contains("NO"));
+    }
+
+    #[test]
+    fn test_format_markdown_contains_sections() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "markdown-host".to_string(),
+            status: StatusInfo {
+                active: true,
+                backend: "nftables".to_string(),
+                entries_in_set: 1000,
+                last_update: Some(Utc::now()),
+            },
+            blocking: BlockingStats {
+                packets_blocked: 200,
+                bytes_blocked: 10000,
+                bytes_blocked_human: "10.0 KB".to_string(),
+            },
+            sources: vec![SourceInfo {
+                name: "test-source".to_string(),
+                ip_count: 100,
+                raw_count: 50,
+            }],
+            top_blocked: vec![TopBlockedIp {
+                ip: "10.0.0.1".to_string(),
+                count: 50,
+                hostname: None,
+            }],
+        };
+
+        let md = format_markdown(&report);
+        assert!(md.contains("# OustIP Report"));
+        assert!(md.contains("## Status"));
+        assert!(md.contains("## Blocking Statistics"));
+        assert!(md.contains("## Sources"));
+        assert!(md.contains("## Top Blocked IPs"));
+        assert!(md.contains("| Metric | Value |"));
+        assert!(md.contains("test-source"));
+        assert!(md.contains("10.0.0.1"));
+    }
+
+    #[test]
+    fn test_format_markdown_active_status_emoji() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "host".to_string(),
+            status: StatusInfo {
+                active: true,
+                backend: "nftables".to_string(),
+                entries_in_set: 0,
+                last_update: None,
+            },
+            blocking: BlockingStats {
+                packets_blocked: 0,
+                bytes_blocked: 0,
+                bytes_blocked_human: "0 B".to_string(),
+            },
+            sources: vec![],
+            top_blocked: vec![],
+        };
+
+        let md = format_markdown(&report);
+        assert!(md.contains("Yes"));
+    }
+
+    #[test]
+    fn test_format_markdown_inactive_status_emoji() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "host".to_string(),
+            status: StatusInfo {
+                active: false,
+                backend: "nftables".to_string(),
+                entries_in_set: 0,
+                last_update: None,
+            },
+            blocking: BlockingStats {
+                packets_blocked: 0,
+                bytes_blocked: 0,
+                bytes_blocked_human: "0 B".to_string(),
+            },
+            sources: vec![],
+            top_blocked: vec![],
+        };
+
+        let md = format_markdown(&report);
+        assert!(md.contains("No"));
+    }
+
+    #[test]
+    fn test_top_blocked_ip_clone() {
+        let ip = TopBlockedIp {
+            ip: "1.2.3.4".to_string(),
+            count: 100,
+            hostname: Some("example.com".to_string()),
+        };
+        let cloned = ip.clone();
+        assert_eq!(ip.ip, cloned.ip);
+        assert_eq!(ip.count, cloned.count);
+        assert_eq!(ip.hostname, cloned.hostname);
+    }
+
+    #[test]
+    fn test_source_info_serialization() {
+        let source = SourceInfo {
+            name: "test".to_string(),
+            ip_count: 1000,
+            raw_count: 50,
+        };
+        let json = serde_json::to_string(&source).unwrap();
+        assert!(json.contains("\"name\":\"test\""));
+        assert!(json.contains("\"ip_count\":1000"));
+        assert!(json.contains("\"raw_count\":50"));
+    }
+
+    #[test]
+    fn test_blocking_stats_serialization() {
+        let stats = BlockingStats {
+            packets_blocked: 5000,
+            bytes_blocked: 1_000_000,
+            bytes_blocked_human: "1.0 MB".to_string(),
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("\"packets_blocked\":5000"));
+        assert!(json.contains("\"bytes_blocked\":1000000"));
+        assert!(json.contains("\"bytes_blocked_human\":\"1.0 MB\""));
+    }
+
+    #[test]
+    fn test_status_info_serialization() {
+        let status = StatusInfo {
+            active: true,
+            backend: "nftables".to_string(),
+            entries_in_set: 1234,
+            last_update: None,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("\"active\":true"));
+        assert!(json.contains("\"backend\":\"nftables\""));
+        assert!(json.contains("\"entries_in_set\":1234"));
+        assert!(json.contains("\"last_update\":null"));
+    }
+
+    #[test]
+    fn test_format_text_with_sources() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "host".to_string(),
+            status: StatusInfo {
+                active: true,
+                backend: "nftables".to_string(),
+                entries_in_set: 100,
+                last_update: None,
+            },
+            blocking: BlockingStats {
+                packets_blocked: 0,
+                bytes_blocked: 0,
+                bytes_blocked_human: "0 B".to_string(),
+            },
+            sources: vec![
+                SourceInfo {
+                    name: "source1".to_string(),
+                    ip_count: 500,
+                    raw_count: 100,
+                },
+                SourceInfo {
+                    name: "source2".to_string(),
+                    ip_count: 1000,
+                    raw_count: 200,
+                },
+            ],
+            top_blocked: vec![],
+        };
+
+        let text = format_text(&report);
+        assert!(text.contains("SOURCES"));
+        assert!(text.contains("source1"));
+        assert!(text.contains("source2"));
+    }
+
+    #[test]
+    fn test_format_text_with_top_blocked() {
+        let report = Report {
+            generated_at: Utc::now(),
+            hostname: "host".to_string(),
+            status: StatusInfo {
+                active: true,
+                backend: "nftables".to_string(),
+                entries_in_set: 100,
+                last_update: None,
+            },
+            blocking: BlockingStats {
+                packets_blocked: 0,
+                bytes_blocked: 0,
+                bytes_blocked_human: "0 B".to_string(),
+            },
+            sources: vec![],
+            top_blocked: vec![
+                TopBlockedIp {
+                    ip: "1.1.1.1".to_string(),
+                    count: 100,
+                    hostname: None,
+                },
+                TopBlockedIp {
+                    ip: "2.2.2.2".to_string(),
+                    count: 50,
+                    hostname: None,
+                },
+            ],
+        };
+
+        let text = format_text(&report);
+        assert!(text.contains("TOP BLOCKED IPs"));
+        assert!(text.contains("1.1.1.1"));
+        assert!(text.contains("2.2.2.2"));
+    }
+}

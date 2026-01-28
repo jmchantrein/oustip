@@ -102,3 +102,75 @@ async fn list_assumed() -> Result<()> {
 
     Ok(())
 }
+
+/// Validate an IP address string
+pub fn validate_ip(ip_str: &str) -> Result<IpAddr> {
+    ip_str
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid IP address: {}", ip_str))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_ip_v4_valid() {
+        let result = validate_ip("192.168.1.1");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_ipv4());
+    }
+
+    #[test]
+    fn test_validate_ip_v6_valid() {
+        let result = validate_ip("::1");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_ipv6());
+    }
+
+    #[test]
+    fn test_validate_ip_v6_full() {
+        let result = validate_ip("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_ipv6());
+    }
+
+    #[test]
+    fn test_validate_ip_invalid() {
+        let result = validate_ip("not-an-ip");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid IP"));
+    }
+
+    #[test]
+    fn test_validate_ip_empty() {
+        let result = validate_ip("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_ip_with_cidr() {
+        // CIDR notation should fail for single IP validation
+        let result = validate_ip("192.168.1.0/24");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_ip_localhost_v4() {
+        let result = validate_ip("127.0.0.1");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_loopback());
+    }
+
+    #[test]
+    fn test_validate_ip_broadcast() {
+        let result = validate_ip("255.255.255.255");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_ip_zero() {
+        let result = validate_ip("0.0.0.0");
+        assert!(result.is_ok());
+    }
+}
