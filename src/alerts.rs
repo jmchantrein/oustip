@@ -11,7 +11,8 @@ use tracing::{debug, error, warn};
 
 use crate::config::AlertsConfig;
 
-const TIMEOUT_SECS: u64 = 10;
+/// Timeout for alert HTTP requests (30s for slow networks/SMTP)
+const TIMEOUT_SECS: u64 = 30;
 
 /// Alert severity levels
 #[derive(Debug, Clone, Copy)]

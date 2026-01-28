@@ -121,11 +121,18 @@ pub async fn run(ip_str: &str, show_dns: bool, config_path: &Path) -> Result<()>
     Ok(())
 }
 
-/// Resolve IP to hostname via reverse DNS
+/// Resolve IP to hostname via reverse DNS with timeout
 async fn resolve_ip(ip: &IpAddr) -> String {
+    use std::time::Duration;
+
     let ip_clone = *ip;
-    match tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip_clone)).await {
-        Ok(Ok(hostname)) => hostname,
-        _ => "(no PTR record)".to_string(),
+    let dns_future = tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip_clone));
+
+    // 5 second timeout to prevent hanging on unresponsive DNS
+    match tokio::time::timeout(Duration::from_secs(5), dns_future).await {
+        Ok(Ok(Ok(hostname))) => hostname,
+        Ok(Ok(Err(_))) => "(no PTR record)".to_string(),
+        Ok(Err(_)) => "(DNS task failed)".to_string(),
+        Err(_) => "(DNS timeout)".to_string(),
     }
 }

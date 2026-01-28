@@ -36,22 +36,55 @@ pub struct ShutdownGuard {
 
 impl ShutdownGuard {
     /// Create a new shutdown guard and start listening for signals.
+    ///
+    /// If signal handlers cannot be registered (e.g., in restricted environments),
+    /// the guard is still created but signal handling will be disabled.
     pub fn new() -> Self {
         // Spawn signal handler task
         tokio::spawn(async move {
-            let mut sigint =
-                signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
-            let mut sigterm =
-                signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
+            // Try to register signal handlers - may fail in containers or restricted envs
+            let sigint = match signal(SignalKind::interrupt()) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    tracing::warn!("Failed to register SIGINT handler: {}", e);
+                    None
+                }
+            };
 
-            tokio::select! {
-                _ = sigint.recv() => {
+            let sigterm = match signal(SignalKind::terminate()) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    tracing::warn!("Failed to register SIGTERM handler: {}", e);
+                    None
+                }
+            };
+
+            // Only proceed if at least one handler was registered
+            match (sigint, sigterm) {
+                (Some(mut int), Some(mut term)) => {
+                    tokio::select! {
+                        _ = int.recv() => {
+                            info!("Received SIGINT, initiating graceful shutdown...");
+                            request_shutdown();
+                        }
+                        _ = term.recv() => {
+                            info!("Received SIGTERM, initiating graceful shutdown...");
+                            request_shutdown();
+                        }
+                    }
+                }
+                (Some(mut int), None) => {
+                    int.recv().await;
                     info!("Received SIGINT, initiating graceful shutdown...");
                     request_shutdown();
                 }
-                _ = sigterm.recv() => {
+                (None, Some(mut term)) => {
+                    term.recv().await;
                     info!("Received SIGTERM, initiating graceful shutdown...");
                     request_shutdown();
+                }
+                (None, None) => {
+                    tracing::warn!("No signal handlers registered - graceful shutdown disabled");
                 }
             }
         });

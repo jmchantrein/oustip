@@ -322,10 +322,17 @@ fn networks_overlap(a: &IpNet, b: &IpNet) -> bool {
     a.contains(&b.addr()) || b.contains(&a.addr())
 }
 
-/// Resolve IP address to hostname via reverse DNS
+/// Resolve IP address to hostname via reverse DNS with timeout
 async fn resolve_ip_for_overlap(ip: IpAddr) -> String {
-    match tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip)).await {
-        Ok(Ok(hostname)) => hostname,
-        _ => "(no PTR)".to_string(),
+    use std::time::Duration;
+
+    let dns_future = tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip));
+
+    // 5 second timeout to prevent hanging on unresponsive DNS
+    match tokio::time::timeout(Duration::from_secs(5), dns_future).await {
+        Ok(Ok(Ok(hostname))) => hostname,
+        Ok(Ok(Err(_))) => "(no PTR)".to_string(),
+        Ok(Err(_)) => "(DNS task failed)".to_string(),
+        Err(_) => "(DNS timeout)".to_string(),
     }
 }

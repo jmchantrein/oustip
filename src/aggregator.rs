@@ -52,6 +52,8 @@ pub fn deduplicate(nets: &[IpNet]) -> Vec<IpNet> {
 }
 
 /// Calculate the total number of individual IPs covered by a list of CIDRs.
+///
+/// Uses saturating arithmetic to prevent overflow on large prefixes like /0.
 pub fn count_ips(nets: &[IpNet]) -> u128 {
     nets.iter()
         .map(|net| {
@@ -60,9 +62,16 @@ pub fn count_ips(nets: &[IpNet]) -> u128 {
                 IpNet::V4(_) => 32,
                 IpNet::V6(_) => 128,
             };
-            1u128 << (max_prefix - prefix_len)
+            let shift = max_prefix - prefix_len;
+            // Prevent overflow: 1 << 128 would overflow u128
+            // Cap at u128::MAX for /0 IPv6 networks
+            if shift >= 128 {
+                u128::MAX
+            } else {
+                1u128 << shift
+            }
         })
-        .sum()
+        .fold(0u128, |acc, count| acc.saturating_add(count))
 }
 
 /// Calculate what percentage of the public IPv4 space is covered.
