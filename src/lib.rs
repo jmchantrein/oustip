@@ -9,7 +9,6 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod enforcer;
-pub mod error;
 pub mod fetcher;
 pub mod installer;
 pub mod lock;
@@ -18,4 +17,3 @@ pub mod stats;
 
 pub use cli::{AllowlistAction, Cli, Commands, Ipv6Action};
 pub use config::Config;
-pub use error::OustipError;
