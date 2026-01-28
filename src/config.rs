@@ -94,12 +94,6 @@ pub struct Config {
     /// Update interval for systemd timer
     pub update_interval: String,
 
-    /// Log file path
-    pub log_file: String,
-
-    /// Log level (debug, info, warn, error)
-    pub log_level: String,
-
     /// IPv6 configuration
     pub ipv6: Ipv6Config,
 
@@ -119,8 +113,6 @@ impl Default for Config {
             auto_allowlist: AutoAllowlist::default(),
             allowlist: default_allowlist(),
             update_interval: "4h".to_string(),
-            log_file: "/var/log/oustip.log".to_string(),
-            log_level: "info".to_string(),
             ipv6: Ipv6Config::default(),
             preset: "recommended".to_string(),
         }
@@ -171,15 +163,49 @@ impl Config {
             }
         }
 
+        // Validate webhook URL uses HTTPS if enabled
+        if self.alerts.webhook.enabled
+            && !self.alerts.webhook.url.is_empty()
+            && !self.alerts.webhook.url.starts_with("https://")
+        {
+            anyhow::bail!("Webhook URL must use HTTPS: {}", self.alerts.webhook.url);
+        }
+
+        // Validate Gotify URL uses HTTPS if enabled
+        if self.alerts.gotify.enabled
+            && !self.alerts.gotify.url.is_empty()
+            && !self.alerts.gotify.url.starts_with("https://")
+        {
+            anyhow::bail!("Gotify URL must use HTTPS: {}", self.alerts.gotify.url);
+        }
+
         Ok(())
     }
 
-    /// Save configuration to YAML file
+    /// Save configuration to YAML file atomically
+    ///
+    /// Uses tempfile + rename pattern to prevent corruption on crash.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let content = serde_yaml::to_string(self)
-            .with_context(|| "Failed to serialize config")?;
-        std::fs::write(path.as_ref(), content)
-            .with_context(|| format!("Failed to write config file: {:?}", path.as_ref()))?;
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let path = path.as_ref();
+        let content = serde_yaml::to_string(self).with_context(|| "Failed to serialize config")?;
+
+        // Create temporary file in the same directory for atomic rename
+        let parent_dir = path.parent().unwrap_or(Path::new("/etc/oustip"));
+        let mut temp_file = NamedTempFile::new_in(parent_dir)
+            .context("Failed to create temporary file for config")?;
+
+        // Write content and ensure it's flushed to disk
+        temp_file.write_all(content.as_bytes())?;
+        temp_file.as_file().sync_all()?;
+
+        // Atomically rename temp file to target
+        temp_file
+            .persist(path)
+            .with_context(|| format!("Failed to persist config file: {:?}", path))?;
+
         Ok(())
     }
 
@@ -320,20 +346,26 @@ where
     // Validate each header for injection attacks
     for (key, value) in &headers {
         if key.contains('\r') || key.contains('\n') {
-            return Err(serde::de::Error::custom(
-                format!("Invalid header name '{}': contains newline characters", key)
-            ));
+            return Err(serde::de::Error::custom(format!(
+                "Invalid header name '{}': contains newline characters",
+                key
+            )));
         }
         if value.contains('\r') || value.contains('\n') {
-            return Err(serde::de::Error::custom(
-                format!("Invalid header value for '{}': contains newline characters", key)
-            ));
+            return Err(serde::de::Error::custom(format!(
+                "Invalid header value for '{}': contains newline characters",
+                key
+            )));
         }
         // Validate header name characters (RFC 7230)
-        if !key.chars().all(|c| c.is_ascii_alphanumeric() || "-_".contains(c)) {
-            return Err(serde::de::Error::custom(
-                format!("Invalid header name '{}': contains invalid characters", key)
-            ));
+        if !key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
+        {
+            return Err(serde::de::Error::custom(format!(
+                "Invalid header name '{}': contains invalid characters",
+                key
+            )));
         }
     }
 
@@ -397,11 +429,7 @@ pub enum Ipv6BootState {
 /// Get blocklist names for a preset
 fn get_preset_lists(preset: &str) -> Option<Vec<&'static str>> {
     match preset {
-        "minimal" => Some(vec![
-            "spamhaus_drop",
-            "spamhaus_edrop",
-            "dshield",
-        ]),
+        "minimal" => Some(vec!["spamhaus_drop", "spamhaus_edrop", "dshield"]),
         "recommended" => Some(vec![
             "spamhaus_drop",
             "spamhaus_edrop",
@@ -472,10 +500,10 @@ fn default_blocklists() -> Vec<BlocklistSource> {
 
 fn default_allowlist() -> Vec<String> {
     vec![
-        "192.168.0.0/16".to_string(),  // RFC1918
-        "10.0.0.0/8".to_string(),       // RFC1918
-        "172.16.0.0/12".to_string(),    // RFC1918
-        "127.0.0.0/8".to_string(),      // Loopback
+        "192.168.0.0/16".to_string(), // RFC1918
+        "10.0.0.0/8".to_string(),     // RFC1918
+        "172.16.0.0/12".to_string(),  // RFC1918
+        "127.0.0.0/8".to_string(),    // Loopback
     ]
 }
 
@@ -602,8 +630,10 @@ headers:
 
     #[test]
     fn test_config_validation_invalid_preset() {
-        let mut config = Config::default();
-        config.preset = "invalid_preset".to_string();
+        let config = Config {
+            preset: "invalid_preset".to_string(),
+            ..Default::default()
+        };
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Invalid preset"));
@@ -611,17 +641,26 @@ headers:
 
     #[test]
     fn test_config_validation_invalid_interval() {
-        let mut config = Config::default();
-        config.update_interval = "invalid".to_string();
+        let config = Config {
+            update_interval: "invalid".to_string(),
+            ..Default::default()
+        };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid update_interval"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid update_interval"));
     }
 
     #[test]
     fn test_config_validation_http_url_rejected() {
-        let mut config = Config::default();
-        config.blocklists[0].url = "http://example.com/list".to_string();
+        let mut blocklists = default_blocklists();
+        blocklists[0].url = "http://example.com/list".to_string();
+        let config = Config {
+            blocklists,
+            ..Default::default()
+        };
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("HTTPS"));

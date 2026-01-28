@@ -13,6 +13,7 @@ use std::path::Path;
 use tempfile::NamedTempFile;
 
 const STATE_FILE: &str = "/var/lib/oustip/state.json";
+const STATE_BACKUP_FILE: &str = "/var/lib/oustip/state.json.bak";
 
 /// Persistent state for OustIP
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -32,28 +33,68 @@ pub struct SourceStats {
 }
 
 impl OustipState {
-    /// Load state from file
+    /// Load state from file, falling back to backup if main file is corrupted
     pub fn load() -> Result<Self> {
         let path = Path::new(STATE_FILE);
+        let backup_path = Path::new(STATE_BACKUP_FILE);
+
+        // Try to load main state file
         if path.exists() {
-            let content = fs::read_to_string(path)?;
-            Ok(serde_json::from_str(&content)?)
-        } else {
-            Ok(Self::default())
+            match fs::read_to_string(path) {
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(state) => return Ok(state),
+                    Err(e) => {
+                        tracing::warn!("State file corrupted, trying backup: {}", e);
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to read state file, trying backup: {}", e);
+                }
+            }
         }
+
+        // Try to load backup
+        if backup_path.exists() {
+            if let Ok(content) = fs::read_to_string(backup_path) {
+                if let Ok(state) = serde_json::from_str(&content) {
+                    tracing::info!("Recovered state from backup file");
+                    return Ok(state);
+                }
+            }
+        }
+
+        Ok(Self::default())
     }
 
-    /// Save state to file atomically
+    /// Create a backup of the current state file
+    fn backup_state() -> Result<()> {
+        let path = Path::new(STATE_FILE);
+        let backup_path = Path::new(STATE_BACKUP_FILE);
+
+        if path.exists() {
+            fs::copy(path, backup_path).context("Failed to create state backup")?;
+        }
+
+        Ok(())
+    }
+
+    /// Save state to file atomically with backup
     ///
     /// Uses tempfile crate for secure temporary file handling with
     /// automatic cleanup on error. The write-to-temp-then-rename pattern
     /// prevents corruption if the process is interrupted during write.
+    /// A backup is created before each save for recovery purposes.
     pub fn save(&self) -> Result<()> {
         use std::io::Write;
 
         let path = Path::new(STATE_FILE);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
+        }
+
+        // Create backup before saving
+        if let Err(e) = Self::backup_state() {
+            tracing::warn!("Failed to create state backup (continuing anyway): {}", e);
         }
 
         let content = serde_json::to_string_pretty(self)?;
@@ -70,7 +111,8 @@ impl OustipState {
 
         // Atomically rename temp file to target
         // persist_noclobber would fail if file exists, so we use persist
-        temp_file.persist(path)
+        temp_file
+            .persist(path)
             .context("Failed to persist state file")?;
 
         Ok(())
@@ -161,17 +203,18 @@ pub async fn display_stats(config: &Config) -> Result<()> {
         " Packets blocked: {}",
         format_count(fw_stats.packets_blocked as usize)
     );
-    println!(
-        " Bytes blocked: {}",
-        format_bytes(fw_stats.bytes_blocked)
-    );
+    println!(" Bytes blocked: {}", format_bytes(fw_stats.bytes_blocked));
     println!();
 
     // Last update
     if let Some(last_update) = state.last_update {
         let local: DateTime<Local> = last_update.into();
         let ago = format_duration_ago(last_update);
-        println!(" Last update: {} ({})", local.format("%Y-%m-%d %H:%M:%S"), ago);
+        println!(
+            " Last update: {} ({})",
+            local.format("%Y-%m-%d %H:%M:%S"),
+            ago
+        );
     } else {
         println!(" Last update: never");
     }

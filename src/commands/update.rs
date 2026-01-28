@@ -10,7 +10,12 @@ use crate::alerts::{AlertManager, AlertTypes};
 use crate::config::Config;
 use crate::enforcer::{check_root, create_backend};
 use crate::fetcher::{format_count, Fetcher};
+use crate::lock::LockGuard;
+use crate::signal::is_shutdown_requested;
 use crate::stats::OustipState;
+
+/// Default failure threshold percentage (50%)
+const DEFAULT_FAILURE_THRESHOLD: f64 = 0.5;
 
 /// Run the update command
 pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> Result<()> {
@@ -18,6 +23,13 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
     if !dry_run {
         check_root()?;
     }
+
+    // Acquire exclusive lock (skip in dry-run mode)
+    let _lock = if !dry_run {
+        Some(LockGuard::acquire()?)
+    } else {
+        None
+    };
 
     // Load config
     let config = Config::load(config_path)
@@ -45,8 +57,20 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
         return Ok(());
     }
 
+    // Check for shutdown before long operation
+    if is_shutdown_requested() {
+        info!("Shutdown requested, aborting update.");
+        return Ok(());
+    }
+
     // Fetch all blocklists concurrently
     let results = fetcher.fetch_blocklists(&enabled_lists).await;
+
+    // Check for shutdown after fetch
+    if is_shutdown_requested() {
+        info!("Shutdown requested, aborting update.");
+        return Ok(());
+    }
 
     // Collect successful fetches
     let mut all_ips: Vec<IpNet> = Vec::new();
@@ -69,6 +93,30 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
                 fetch_errors.push((source_name, e.to_string()));
             }
         }
+    }
+
+    // Check failure threshold
+    let total_sources = enabled_lists.len();
+    let failed_sources = fetch_errors.len();
+    let failure_rate = failed_sources as f64 / total_sources as f64;
+
+    if failure_rate >= DEFAULT_FAILURE_THRESHOLD {
+        let msg = format!(
+            "Too many sources failed: {}/{} ({:.0}% failure rate, threshold: {:.0}%)",
+            failed_sources,
+            total_sources,
+            failure_rate * 100.0,
+            DEFAULT_FAILURE_THRESHOLD * 100.0
+        );
+        error!("{}", msg);
+
+        // Send alert for partial failure threshold exceeded
+        if let Ok(alert_manager) = AlertManager::new(config.alerts.clone()) {
+            let (level, title, alert_msg) = AlertTypes::update_failed(&msg);
+            alert_manager.send(level, &title, &alert_msg).await;
+        }
+
+        anyhow::bail!(msg);
     }
 
     if all_ips.is_empty() {
@@ -123,11 +171,23 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
         println!();
         println!("[DRY-RUN] Summary:");
         println!("  - Blocklists fetched: {}", source_stats.len());
-        println!("  - Total IPs before filtering: {}", format_count(all_ips.len()));
+        println!(
+            "  - Total IPs before filtering: {}",
+            format_count(all_ips.len())
+        );
         println!("  - Allowlist entries: {}", format_count(allowlist.len()));
-        println!("  - IPs after filtering: {}", format_count(filtered_ips.len()));
-        println!("  - Optimized CIDR ranges: {}", format_count(aggregated.len()));
-        println!("  - Total IPs covered: {}", format_count(total_ips as usize));
+        println!(
+            "  - IPs after filtering: {}",
+            format_count(filtered_ips.len())
+        );
+        println!(
+            "  - Optimized CIDR ranges: {}",
+            format_count(aggregated.len())
+        );
+        println!(
+            "  - Total IPs covered: {}",
+            format_count(total_ips as usize)
+        );
         println!();
         println!("[DRY-RUN] No firewall rules applied.");
         if !fetch_errors.is_empty() {

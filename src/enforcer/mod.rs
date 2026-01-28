@@ -135,12 +135,18 @@ pub mod mock {
         pub active: Mutex<bool>,
     }
 
-    impl MockBackend {
-        pub fn new() -> Self {
+    impl Default for MockBackend {
+        fn default() -> Self {
             Self {
                 applied_ips: Mutex::new(Vec::new()),
                 active: Mutex::new(false),
             }
+        }
+    }
+
+    impl MockBackend {
+        pub fn new() -> Self {
+            Self::default()
         }
     }
 

@@ -24,9 +24,7 @@ impl IptablesBackend {
     /// Create ipset and populate with IPs
     fn create_ipset(&self, ips: &[IpNet]) -> Result<()> {
         // Destroy existing set if any
-        let _ = Command::new("ipset")
-            .args(["destroy", IPSET_NAME])
-            .output();
+        let _ = Command::new("ipset").args(["destroy", IPSET_NAME]).output();
 
         // Create new set (hash:net for CIDR support)
         exec_cmd("ipset", &["create", IPSET_NAME, "hash:net", "-exist"])?;
@@ -74,7 +72,10 @@ impl IptablesBackend {
                 exec_cmd("iptables", &["-I", "INPUT", "-j", CHAIN_INPUT])?;
                 exec_cmd("iptables", &["-I", "FORWARD", "-j", CHAIN_FORWARD])?;
             } else {
-                exec_cmd("iptables", &["-t", "raw", "-I", "PREROUTING", "-j", CHAIN_INPUT])?;
+                exec_cmd(
+                    "iptables",
+                    &["-t", "raw", "-I", "PREROUTING", "-j", CHAIN_INPUT],
+                )?;
             }
         }
 
@@ -87,34 +88,66 @@ impl IptablesBackend {
         exec_cmd(
             "iptables",
             &[
-                "-A", CHAIN_INPUT,
-                "-m", "set", "--match-set", IPSET_NAME, "src",
-                "-j", "LOG", "--log-prefix", "OustIP-Blocked: ", "--log-level", "4",
+                "-A",
+                CHAIN_INPUT,
+                "-m",
+                "set",
+                "--match-set",
+                IPSET_NAME,
+                "src",
+                "-j",
+                "LOG",
+                "--log-prefix",
+                "OustIP-Blocked: ",
+                "--log-level",
+                "4",
             ],
         )?;
         exec_cmd(
             "iptables",
             &[
-                "-A", CHAIN_INPUT,
-                "-m", "set", "--match-set", IPSET_NAME, "src",
-                "-j", "DROP",
+                "-A",
+                CHAIN_INPUT,
+                "-m",
+                "set",
+                "--match-set",
+                IPSET_NAME,
+                "src",
+                "-j",
+                "DROP",
             ],
         )?;
 
         exec_cmd(
             "iptables",
             &[
-                "-A", CHAIN_FORWARD,
-                "-m", "set", "--match-set", IPSET_NAME, "src",
-                "-j", "LOG", "--log-prefix", "OustIP-Blocked: ", "--log-level", "4",
+                "-A",
+                CHAIN_FORWARD,
+                "-m",
+                "set",
+                "--match-set",
+                IPSET_NAME,
+                "src",
+                "-j",
+                "LOG",
+                "--log-prefix",
+                "OustIP-Blocked: ",
+                "--log-level",
+                "4",
             ],
         )?;
         exec_cmd(
             "iptables",
             &[
-                "-A", CHAIN_FORWARD,
-                "-m", "set", "--match-set", IPSET_NAME, "src",
-                "-j", "DROP",
+                "-A",
+                CHAIN_FORWARD,
+                "-m",
+                "set",
+                "--match-set",
+                IPSET_NAME,
+                "src",
+                "-j",
+                "DROP",
             ],
         )?;
 
@@ -159,7 +192,10 @@ impl FirewallBackend for IptablesBackend {
         let _ = exec_cmd("iptables", &["-D", "FORWARD", "-j", CHAIN_FORWARD]);
 
         // Also try raw table
-        let _ = exec_cmd("iptables", &["-t", "raw", "-D", "PREROUTING", "-j", CHAIN_INPUT]);
+        let _ = exec_cmd(
+            "iptables",
+            &["-t", "raw", "-D", "PREROUTING", "-j", CHAIN_INPUT],
+        );
 
         // Flush and delete our chains
         let _ = exec_cmd("iptables", &["-F", CHAIN_INPUT]);

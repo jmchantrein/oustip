@@ -66,17 +66,15 @@ impl Fetcher {
     pub async fn fetch_blocklist(&self, source: &BlocklistSource) -> Result<FetchResult> {
         info!("Fetching {}...", source.name);
 
-        let content = self.fetch_with_retry(&source.url).await
+        let content = self
+            .fetch_with_retry(&source.url)
+            .await
             .with_context(|| format!("Failed to fetch {}", source.name))?;
 
         let ips = parse_blocklist(&content);
         let raw_count = ips.len();
 
-        info!(
-            "Fetched {} - {} IPs",
-            source.name,
-            format_count(raw_count)
-        );
+        info!("Fetched {} - {} IPs", source.name, format_count(raw_count));
 
         Ok(FetchResult {
             name: source.name.clone(),
@@ -154,7 +152,8 @@ impl Fetcher {
 
     /// Fetch content with retry logic and size validation
     async fn fetch_with_retry(&self, url: &str) -> Result<String> {
-        self.fetch_with_retry_and_limit(url, MAX_BLOCKLIST_SIZE).await
+        self.fetch_with_retry_and_limit(url, MAX_BLOCKLIST_SIZE)
+            .await
     }
 
     /// Fetch content with retry logic and custom size limit
@@ -192,7 +191,10 @@ impl Fetcher {
                             }
                         }
 
-                        let body = response.text().await.context("Failed to read response body")?;
+                        let body = response
+                            .text()
+                            .await
+                            .context("Failed to read response body")?;
 
                         // Double-check actual size after download
                         if body.len() > max_size {
@@ -204,7 +206,10 @@ impl Fetcher {
                         }
 
                         // Update cumulative download counter
-                        let new_total = self.total_downloaded.fetch_add(body.len(), Ordering::Relaxed) + body.len();
+                        let new_total = self
+                            .total_downloaded
+                            .fetch_add(body.len(), Ordering::Relaxed)
+                            + body.len();
                         if new_total > MAX_TOTAL_SIZE {
                             return Err(anyhow::anyhow!(
                                 "Cumulative download limit exceeded: {} bytes (max: {} bytes)",
@@ -228,7 +233,9 @@ impl Fetcher {
 
     /// Fetch Cloudflare IPv4 ranges
     async fn fetch_cloudflare_ips(&self) -> Result<Vec<IpNet>> {
-        let content = self.fetch_with_retry("https://www.cloudflare.com/ips-v4").await?;
+        let content = self
+            .fetch_with_retry("https://www.cloudflare.com/ips-v4")
+            .await?;
         Ok(parse_simple_list(&content))
     }
 
@@ -247,7 +254,10 @@ impl Fetcher {
         let meta: GitHubMeta = serde_json::from_str(&content)?;
 
         let mut ips = HashSet::new();
-        for list in [meta.hooks, meta.web, meta.api, meta.git, meta.actions].into_iter().flatten() {
+        for list in [meta.hooks, meta.web, meta.api, meta.git, meta.actions]
+            .into_iter()
+            .flatten()
+        {
             for ip_str in list {
                 if let Ok(net) = ip_str.parse::<IpNet>() {
                     // Only IPv4 for now
@@ -274,7 +284,9 @@ impl Fetcher {
             ipv4_prefix: Option<String>,
         }
 
-        let content = self.fetch_with_retry("https://www.gstatic.com/ipranges/cloud.json").await?;
+        let content = self
+            .fetch_with_retry("https://www.gstatic.com/ipranges/cloud.json")
+            .await?;
         let ranges: GoogleCloudRanges = serde_json::from_str(&content)?;
 
         let ips: Vec<IpNet> = ranges
@@ -299,7 +311,9 @@ impl Fetcher {
             ip_prefix: String,
         }
 
-        let content = self.fetch_with_retry("https://ip-ranges.amazonaws.com/ip-ranges.json").await?;
+        let content = self
+            .fetch_with_retry("https://ip-ranges.amazonaws.com/ip-ranges.json")
+            .await?;
         let ranges: AwsRanges = serde_json::from_str(&content)?;
 
         let ips: Vec<IpNet> = ranges
@@ -318,7 +332,9 @@ impl Fetcher {
             addresses: Vec<String>,
         }
 
-        let content = self.fetch_with_retry("https://api.fastly.com/public-ip-list").await?;
+        let content = self
+            .fetch_with_retry("https://api.fastly.com/public-ip-list")
+            .await?;
         let ranges: FastlyRanges = serde_json::from_str(&content)?;
 
         let ips: Vec<IpNet> = ranges
@@ -394,7 +410,8 @@ mod tests {
 
     #[test]
     fn test_parse_blocklist_mixed() {
-        let content = "# FireHOL blocklist\n\n192.168.1.1\n10.0.0.0/8\n# another comment\n172.16.0.0/12";
+        let content =
+            "# FireHOL blocklist\n\n192.168.1.1\n10.0.0.0/8\n# another comment\n172.16.0.0/12";
         let ips = parse_blocklist(content);
         assert_eq!(ips.len(), 3);
     }

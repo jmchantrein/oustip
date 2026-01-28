@@ -87,10 +87,6 @@ allowlist:
 # Update interval for systemd timer (e.g., 4h, 1d, 30m)
 update_interval: "4h"
 
-# Log file path
-log_file: "/var/log/oustip.log"
-log_level: "info"  # debug, info, warn, error
-
 # IPv6 configuration
 ipv6:
   # Boot state (disabled, enabled, unchanged)

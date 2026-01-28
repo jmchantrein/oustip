@@ -61,9 +61,7 @@ pub async fn run(config_path: &Path) -> Result<()> {
     }
 
     // Blocklists status
-    let enabled_count = config
-        .get_enabled_blocklists(None)
-        .len();
+    let enabled_count = config.get_enabled_blocklists(None).len();
     println!("Blocklists: {} enabled", enabled_count);
 
     // Last update

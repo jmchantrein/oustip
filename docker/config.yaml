@@ -44,8 +44,6 @@ allowlist:
   - "127.0.0.0/8"
 
 update_interval: "4h"
-log_file: "/var/log/oustip.log"
-log_level: "info"
 
 ipv6:
   boot_state: unchanged

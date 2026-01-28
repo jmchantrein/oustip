@@ -39,36 +39,20 @@ async fn main() -> Result<()> {
 
     // Execute command
     match cli.command {
-        Commands::Install { preset } => {
-            oustip::commands::install::run(preset, &cli.config).await
-        }
+        Commands::Install { preset } => oustip::commands::install::run(preset, &cli.config).await,
         Commands::Update { preset, dry_run } => {
             oustip::commands::update::run(preset, dry_run, &cli.config).await
         }
-        Commands::Stats => {
-            oustip::commands::stats::run(&cli.config).await
-        }
-        Commands::Check { ip } => {
-            oustip::commands::check::run(&ip, &cli.config).await
-        }
-        Commands::Enable => {
-            oustip::commands::enable::run(&cli.config).await
-        }
-        Commands::Disable => {
-            oustip::commands::disable::run(&cli.config).await
-        }
-        Commands::Status => {
-            oustip::commands::status::run(&cli.config).await
-        }
+        Commands::Stats => oustip::commands::stats::run(&cli.config).await,
+        Commands::Check { ip } => oustip::commands::check::run(&ip, &cli.config).await,
+        Commands::Enable => oustip::commands::enable::run(&cli.config).await,
+        Commands::Disable => oustip::commands::disable::run(&cli.config).await,
+        Commands::Status => oustip::commands::status::run(&cli.config).await,
         Commands::Allowlist { action } => {
             oustip::commands::allowlist::run(action, &cli.config).await
         }
-        Commands::Ipv6 { action } => {
-            oustip::commands::ipv6::run(action).await
-        }
-        Commands::Uninstall => {
-            oustip::commands::uninstall::run(&cli.config).await
-        }
+        Commands::Ipv6 { action } => oustip::commands::ipv6::run(action).await,
+        Commands::Uninstall => oustip::commands::uninstall::run(&cli.config).await,
         Commands::Version => {
             println!("oustip {}", env!("CARGO_PKG_VERSION"));
             Ok(())

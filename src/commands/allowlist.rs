@@ -8,6 +8,7 @@ use std::path::Path;
 use crate::cli::AllowlistAction;
 use crate::config::Config;
 use crate::enforcer::check_root;
+use crate::lock::LockGuard;
 
 /// Run the allowlist command
 pub async fn run(action: AllowlistAction, config_path: &Path) -> Result<()> {
@@ -35,7 +36,10 @@ async fn add_to_allowlist(ip_str: &str, config_path: &Path) -> Result<()> {
         IpNet::from(ip)
     };
 
-    // Load config
+    // Acquire lock to prevent concurrent config modifications
+    let _lock = LockGuard::acquire()?;
+
+    // Load config (under lock)
     let mut config = Config::load(config_path)?;
 
     // Check if already in allowlist
@@ -44,7 +48,7 @@ async fn add_to_allowlist(ip_str: &str, config_path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    // Add to allowlist
+    // Add to allowlist and save atomically
     config.allowlist.push(ip_str.to_string());
     config.save(config_path)?;
 
@@ -58,7 +62,10 @@ async fn add_to_allowlist(ip_str: &str, config_path: &Path) -> Result<()> {
 async fn remove_from_allowlist(ip_str: &str, config_path: &Path) -> Result<()> {
     check_root()?;
 
-    // Load config
+    // Acquire lock to prevent concurrent config modifications
+    let _lock = LockGuard::acquire()?;
+
+    // Load config (under lock)
     let mut config = Config::load(config_path)?;
 
     // Find and remove
@@ -70,6 +77,7 @@ async fn remove_from_allowlist(ip_str: &str, config_path: &Path) -> Result<()> {
         return Ok(());
     }
 
+    // Save atomically
     config.save(config_path)?;
 
     println!("[OK] Removed {} from allowlist", ip_str);

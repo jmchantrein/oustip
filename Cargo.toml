@@ -60,6 +60,9 @@ zeroize = { version = "1", features = ["derive"] }
 # Secure temporary files
 tempfile = "3"
 
+# File locking
+fs2 = "0.4"
+
 [dev-dependencies]
 mockall = "0.13"
 tokio-test = "0.4"

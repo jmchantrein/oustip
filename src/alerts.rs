@@ -148,9 +148,7 @@ impl AlertManager {
                  Level: {}\n\
                  Title: {}\n\n\
                  Message:\n{}\n",
-                level_str,
-                title,
-                message
+                level_str, title, message
             );
 
             let email = Message::builder()
@@ -264,10 +262,7 @@ impl AlertTypes {
         (
             AlertLevel::Warning,
             format!("Failed to fetch {}", source),
-            format!(
-                "Could not download blocklist from {}:\n{}",
-                source, error
-            ),
+            format!("Could not download blocklist from {}:\n{}", source, error),
         )
     }
 

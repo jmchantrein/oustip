@@ -18,13 +18,8 @@ const SET_NAME: &str = "blocklist";
 /// but we explicitly validate to prevent any potential injection.
 fn is_safe_nft_element(s: &str) -> bool {
     // Only allow: digits, dots (IPv4), colons (IPv6), slashes (CIDR), a-f (IPv6 hex)
-    s.chars().all(|c| {
-        c.is_ascii_digit()
-            || c == '.'
-            || c == ':'
-            || c == '/'
-            || ('a'..='f').contains(&c)
-    })
+    s.chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == ':' || c == '/' || ('a'..='f').contains(&c))
 }
 
 /// nftables backend
@@ -66,8 +61,8 @@ impl NftablesBackend {
 
         // Create chains based on mode
         let (hook, priority) = match mode {
-            FilterMode::Raw => ("prerouting", -300),      // Before conntrack
-            FilterMode::Conntrack => ("prerouting", -1),  // After conntrack
+            FilterMode::Raw => ("prerouting", -300), // Before conntrack
+            FilterMode::Conntrack => ("prerouting", -1), // After conntrack
         };
 
         // Input chain (packets destined for this host)
@@ -291,7 +286,10 @@ table ip oustip {
 
     #[test]
     fn test_extract_number_after() {
-        assert_eq!(extract_number_after("packets 123 bytes", "packets"), Some(123));
+        assert_eq!(
+            extract_number_after("packets 123 bytes", "packets"),
+            Some(123)
+        );
         assert_eq!(extract_number_after("bytes 456", "bytes"), Some(456));
         assert_eq!(extract_number_after("no number here", "packets"), None);
     }

@@ -123,8 +123,7 @@ pub fn install(preset: Option<&str>) -> Result<()> {
 
     // Create systemd timer
     info!("Creating {}...", SYSTEMD_TIMER);
-    fs::write(SYSTEMD_TIMER, generate_timer_unit("4h"))
-        .context("Failed to write systemd timer")?;
+    fs::write(SYSTEMD_TIMER, generate_timer_unit("4h")).context("Failed to write systemd timer")?;
 
     // Reload systemd
     info!("Reloading systemd...");
@@ -196,9 +195,7 @@ pub fn uninstall() -> Result<()> {
     }
 
     // Reload systemd
-    let _ = Command::new("systemctl")
-        .args(["daemon-reload"])
-        .status();
+    let _ = Command::new("systemctl").args(["daemon-reload"]).status();
 
     // Remove config directory
     if Path::new(CONFIG_DIR).exists() {
@@ -228,8 +225,7 @@ pub fn update_timer_interval(interval: &str) -> Result<()> {
     validate_interval(interval)?;
 
     info!("Updating timer interval to {}...", interval);
-    fs::write(SYSTEMD_TIMER, generate_timer_unit(interval))
-        .context("Failed to update timer")?;
+    fs::write(SYSTEMD_TIMER, generate_timer_unit(interval)).context("Failed to update timer")?;
 
     Command::new("systemctl")
         .args(["daemon-reload"])

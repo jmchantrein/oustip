@@ -12,6 +12,8 @@ pub mod enforcer;
 pub mod error;
 pub mod fetcher;
 pub mod installer;
+pub mod lock;
+pub mod signal;
 pub mod stats;
 
 pub use cli::{AllowlistAction, Cli, Commands, Ipv6Action};

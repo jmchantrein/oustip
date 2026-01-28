@@ -31,9 +31,7 @@ pub fn aggregate(nets: &[IpNet]) -> Vec<IpNet> {
 pub fn subtract_allowlist(blocklist: &[IpNet], allowlist: &[IpNet]) -> Vec<IpNet> {
     blocklist
         .iter()
-        .filter(|blocked| {
-            !allowlist.iter().any(|allowed| contains(allowed, blocked))
-        })
+        .filter(|blocked| !allowlist.iter().any(|allowed| contains(allowed, blocked)))
         .cloned()
         .collect()
 }
@@ -106,9 +104,7 @@ mod tests {
             "10.0.0.0/8".parse().unwrap(),
             "8.8.8.0/24".parse().unwrap(),
         ];
-        let allowlist: Vec<IpNet> = vec![
-            "10.0.0.0/8".parse().unwrap(),
-        ];
+        let allowlist: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
         let result = subtract_allowlist(&blocklist, &allowlist);
         assert_eq!(result.len(), 2);
         assert!(!result.iter().any(|n| n.to_string() == "10.0.0.0/8"));
