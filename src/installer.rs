@@ -32,23 +32,33 @@ fn validate_preset(preset: &str) -> Result<()> {
 
 /// Validate timer interval format to prevent injection
 /// Accepts formats like: 30s, 5m, 4h, 1d
+/// Requires ASCII-only input to prevent Unicode-related edge cases
 fn validate_interval(interval: &str) -> Result<()> {
     if interval.is_empty() {
         anyhow::bail!("Timer interval cannot be empty");
     }
 
-    let len = interval.len();
-    if len < 2 {
+    // Reject non-ASCII to prevent Unicode edge cases
+    if !interval.is_ascii() {
+        anyhow::bail!(
+            "Invalid timer interval '{}'. Only ASCII characters allowed",
+            interval
+        );
+    }
+
+    if interval.len() < 2 {
         anyhow::bail!(
             "Invalid timer interval '{}'. Use format like '4h', '30m', '1d'",
             interval
         );
     }
 
-    let (num_part, suffix) = interval.split_at(len - 1);
+    // Safe to use chars() since we verified ASCII-only
+    let suffix = interval.chars().last().unwrap();
+    let num_part = &interval[..interval.len() - 1];
 
     // Validate suffix
-    if !matches!(suffix, "s" | "m" | "h" | "d") {
+    if !matches!(suffix, 's' | 'm' | 'h' | 'd') {
         anyhow::bail!(
             "Invalid timer interval '{}'. Suffix must be s, m, h, or d",
             interval

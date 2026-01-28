@@ -4,12 +4,13 @@ use crate::aggregator::{count_ips, coverage_percent};
 use crate::config::Config;
 use crate::enforcer::create_backend;
 use crate::fetcher::format_count;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Utc};
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use tempfile::NamedTempFile;
 
 const STATE_FILE: &str = "/var/lib/oustip/state.json";
 
@@ -44,8 +45,9 @@ impl OustipState {
 
     /// Save state to file atomically
     ///
-    /// Uses write-to-temp-then-rename pattern to prevent corruption
-    /// if the process is interrupted during write.
+    /// Uses tempfile crate for secure temporary file handling with
+    /// automatic cleanup on error. The write-to-temp-then-rename pattern
+    /// prevents corruption if the process is interrupted during write.
     pub fn save(&self) -> Result<()> {
         use std::io::Write;
 
@@ -56,14 +58,20 @@ impl OustipState {
 
         let content = serde_json::to_string_pretty(self)?;
 
-        // Write to temporary file first
-        let temp_path = format!("{}.tmp", STATE_FILE);
-        let mut file = fs::File::create(&temp_path)?;
-        file.write_all(content.as_bytes())?;
-        file.sync_all()?; // Ensure data is flushed to disk
+        // Create temporary file in the same directory (required for atomic rename)
+        // NamedTempFile provides secure creation and automatic cleanup on error
+        let parent_dir = path.parent().unwrap_or(Path::new("/var/lib/oustip"));
+        let mut temp_file = NamedTempFile::new_in(parent_dir)
+            .context("Failed to create temporary file for state")?;
+
+        // Write content and ensure it's flushed to disk
+        temp_file.write_all(content.as_bytes())?;
+        temp_file.as_file().sync_all()?;
 
         // Atomically rename temp file to target
-        fs::rename(&temp_path, path)?;
+        // persist_noclobber would fail if file exists, so we use persist
+        temp_file.persist(path)
+            .context("Failed to persist state file")?;
 
         Ok(())
     }

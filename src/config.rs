@@ -48,17 +48,19 @@ impl From<&str> for SecureString {
     }
 }
 
-/// Regex pattern for timer interval validation (e.g., "4h", "30m", "1d")
+/// Timer interval validation (e.g., "4h", "30m", "1d")
+/// Requires ASCII-only input to prevent Unicode-related edge cases
 fn is_valid_interval(interval: &str) -> bool {
-    if interval.is_empty() {
+    // Reject non-ASCII to prevent Unicode edge cases with split_at
+    if !interval.is_ascii() || interval.len() < 2 {
         return false;
     }
-    let len = interval.len();
-    if len < 2 {
-        return false;
-    }
-    let (num, suffix) = interval.split_at(len - 1);
-    matches!(suffix, "s" | "m" | "h" | "d") && num.parse::<u32>().is_ok()
+
+    // Safe to use chars() since we verified ASCII-only
+    let suffix = interval.chars().last().unwrap();
+    let num_part = &interval[..interval.len() - 1];
+
+    matches!(suffix, 's' | 'm' | 'h' | 'd') && num_part.parse::<u32>().is_ok()
 }
 
 /// Main configuration structure
@@ -540,17 +542,23 @@ mod tests {
 
     #[test]
     fn test_valid_interval() {
+        // Valid intervals
         assert!(is_valid_interval("4h"));
         assert!(is_valid_interval("30m"));
         assert!(is_valid_interval("1d"));
         assert!(is_valid_interval("60s"));
         assert!(is_valid_interval("12h"));
 
+        // Invalid intervals
         assert!(!is_valid_interval(""));
         assert!(!is_valid_interval("h"));
         assert!(!is_valid_interval("4"));
         assert!(!is_valid_interval("4x"));
         assert!(!is_valid_interval("abc"));
+
+        // Unicode rejection (security fix) - non-ASCII characters should be rejected
+        assert!(!is_valid_interval("４h")); // Full-width digit 4 (non-ASCII)
+        assert!(!is_valid_interval("4ℎ")); // Planck constant symbol (non-ASCII h-like)
     }
 
     #[test]

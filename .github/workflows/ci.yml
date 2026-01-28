@@ -49,11 +49,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: ${{ runner.os }}-cargo-audit-v1
+
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        run: |
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit
+          fi
+
+      - name: Generate Cargo.lock if missing
+        run: cargo generate-lockfile
 
       - name: Security audit
-        run: cargo audit
+        run: cargo audit --deny warnings
 
   build-linux:
     name: Build Linux

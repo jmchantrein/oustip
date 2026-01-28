@@ -13,6 +13,20 @@ use crate::config::FilterMode;
 const TABLE_NAME: &str = "oustip";
 const SET_NAME: &str = "blocklist";
 
+/// Validate that an IP/CIDR string is safe for nftables script inclusion.
+/// This is a defense-in-depth check - IpNet::to_string() should already be safe,
+/// but we explicitly validate to prevent any potential injection.
+fn is_safe_nft_element(s: &str) -> bool {
+    // Only allow: digits, dots (IPv4), colons (IPv6), slashes (CIDR), a-f (IPv6 hex)
+    s.chars().all(|c| {
+        c.is_ascii_digit()
+            || c == '.'
+            || c == ':'
+            || c == '/'
+            || ('a'..='f').contains(&c)
+    })
+}
+
 /// nftables backend
 pub struct NftablesBackend;
 
@@ -36,10 +50,14 @@ impl NftablesBackend {
         script.push_str("        type ipv4_addr\n");
         script.push_str("        flags interval\n");
 
-        // Add elements
+        // Add elements with defensive validation
         if !ips.is_empty() {
             script.push_str("        elements = { ");
-            let elements: Vec<String> = ips.iter().map(|ip| ip.to_string()).collect();
+            let elements: Vec<String> = ips
+                .iter()
+                .map(|ip| ip.to_string())
+                .filter(|s| is_safe_nft_element(s)) // Defense in depth
+                .collect();
             script.push_str(&elements.join(", "));
             script.push_str(" }\n");
         }
@@ -276,5 +294,25 @@ table ip oustip {
         assert_eq!(extract_number_after("packets 123 bytes", "packets"), Some(123));
         assert_eq!(extract_number_after("bytes 456", "bytes"), Some(456));
         assert_eq!(extract_number_after("no number here", "packets"), None);
+    }
+
+    #[test]
+    fn test_is_safe_nft_element() {
+        // Valid IPv4
+        assert!(is_safe_nft_element("192.168.1.0/24"));
+        assert!(is_safe_nft_element("10.0.0.1"));
+        assert!(is_safe_nft_element("0.0.0.0/0"));
+
+        // Valid IPv6
+        assert!(is_safe_nft_element("2001:db8::/32"));
+        assert!(is_safe_nft_element("::1"));
+        assert!(is_safe_nft_element("fe80::1"));
+
+        // Invalid - potential injection attempts
+        assert!(!is_safe_nft_element("192.168.1.0/24; drop"));
+        assert!(!is_safe_nft_element("10.0.0.1 }"));
+        assert!(!is_safe_nft_element("{ 1.2.3.4"));
+        assert!(!is_safe_nft_element("1.2.3.4\n"));
+        assert!(!is_safe_nft_element("$(whoami)"));
     }
 }

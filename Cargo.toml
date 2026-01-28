@@ -57,8 +57,10 @@ libc = "0.2"
 # Secure memory handling
 zeroize = { version = "1", features = ["derive"] }
 
-[dev-dependencies]
+# Secure temporary files
 tempfile = "3"
+
+[dev-dependencies]
 mockall = "0.13"
 tokio-test = "0.4"
 
