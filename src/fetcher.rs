@@ -83,14 +83,22 @@ impl Fetcher {
         })
     }
 
-    /// Fetch multiple blocklists concurrently
+    /// Fetch multiple blocklists concurrently with limited parallelism
+    ///
+    /// Limits concurrent requests to MAX_CONCURRENT_REQUESTS to avoid:
+    /// - Resource exhaustion (too many TCP connections)
+    /// - Rate limiting from blocklist servers
+    /// - High memory usage during concurrent downloads
     pub async fn fetch_blocklists(&self, sources: &[&BlocklistSource]) -> Vec<Result<FetchResult>> {
-        let futures: Vec<_> = sources
-            .iter()
-            .map(|source| self.fetch_blocklist(source))
-            .collect();
+        use futures::stream::{self, StreamExt};
 
-        futures::future::join_all(futures).await
+        /// Maximum concurrent HTTP requests to blocklist servers
+        const MAX_CONCURRENT_REQUESTS: usize = 6;
+
+        stream::iter(sources.iter().map(|source| self.fetch_blocklist(source)))
+            .buffer_unordered(MAX_CONCURRENT_REQUESTS)
+            .collect()
+            .await
     }
 
     /// Fetch auto-allowlist IPs from CDN providers

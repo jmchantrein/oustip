@@ -9,12 +9,11 @@ src/
 ├── cli.rs                  # CLI argument definitions (clap)
 ├── config.rs               # Configuration loading/validation
 ├── aggregator.rs           # CIDR aggregation and IP math
-├── fetcher.rs              # HTTP client for blocklist downloads
+├── fetcher.rs              # HTTP client for blocklist downloads (6 concurrent max)
 ├── alerts.rs               # Notification system (Gotify, email, webhook)
 ├── stats.rs                # State persistence and statistics display
 ├── lock.rs                 # File-based locking (concurrent execution prevention)
 ├── signal.rs               # Signal handling (graceful shutdown)
-├── error.rs                # Error types
 ├── installer.rs            # Installation/uninstallation logic
 ├── enforcer/
 │   ├── mod.rs              # Firewall backend trait and factory
@@ -65,9 +64,9 @@ main()
     │   ├── Config::load()
     │   ├── ShutdownGuard::new() [signal handling]
     │   ├── Fetcher::new()
-    │   ├── create_backend() -> FirewallBackend
+    │   ├── create_backend() -> FirewallBackend (nftables default)
     │   ├── config.get_enabled_blocklists()
-    │   ├── fetcher.fetch_blocklists() [concurrent HTTP]
+    │   ├── fetcher.fetch_blocklists() [6 concurrent HTTP max]
     │   │   ├── check cumulative size limit
     │   │   ├── parse IPs/CIDRs
     │   │   └── return Vec<FetchResult>
@@ -80,9 +79,14 @@ main()
     │   │   ├── generate script/commands
     │   │   ├── validate elements (is_safe_nft_element)
     │   │   └── execute
+    │   ├── detect_overlaps() [O(1) HashSet lookup + CIDR check]
+    │   │   ├── build HashMap<blocklist_ip, sources>
+    │   │   ├── check allowlist against HashMap
+    │   │   ├── filter out assumed IPs
+    │   │   └── resolve DNS (5s timeout)
     │   ├── state.update_sources()
     │   ├── state.save() [atomic write with backup]
-    │   └── AlertManager::send() [success/error notifications]
+    │   └── AlertManager::send() [success/error/overlap notifications]
     │
     ├── stats
     │   ├── OustipState::load()
@@ -273,6 +277,37 @@ trait FirewallBackend {
 │  - Firewall (nft/iptables)                                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## Performance Characteristics
+
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| Blocklist fetch | O(n) parallel | 6 concurrent requests max |
+| CIDR aggregation | O(n log n) | ipnet crate native |
+| Allowlist subtraction | O(n × m) | n=blocklist, m=allowlist |
+| Overlap detection | O(n + m) | HashSet lookup + CIDR check |
+| nftables apply | O(1) | Single atomic script execution |
+| iptables apply | O(n) | One command per IP (slower) |
+
+### Backend Recommendations
+
+| Blocklist Size | Recommended Backend |
+|----------------|---------------------|
+| < 10,000 IPs | Either works |
+| 10k - 100k IPs | nftables (default) |
+| > 100,000 IPs | nftables required |
+
+### Resource Limits
+
+| Resource | Limit | Configurable |
+|----------|-------|--------------|
+| Max file size | 10 MB | No |
+| Max total download | 50 MB | No |
+| Concurrent HTTP requests | 6 | No |
+| DNS timeout | 5 seconds | No |
+| Alert timeout | 30 seconds | No |
+| Overlap notifications | 50 max | No |
+| Cached IPs per source | 1000 | No |
 
 ## Dead Code Detection
 

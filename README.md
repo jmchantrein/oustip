@@ -13,12 +13,13 @@ OustIP is a high-performance tool for blocking malicious IPs on Linux gateways a
 
 ## Features
 
-- **High Performance** - Process millions of IPs with minimal latency
+- **High Performance** - Process millions of IPs with minimal latency (nftables default)
 - **Memory Safe** - Written in Rust with compile-time guarantees
 - **Simple** - Installation and configuration in 5 minutes
 - **Non-Intrusive** - Never modifies existing firewall rules
-- **Flexible** - Supports both iptables and nftables backends
+- **Flexible** - Supports both nftables (default) and iptables backends
 - **Smart Aggregation** - CIDR optimization reduces rule count
+- **Overlap Detection** - Automatic detection of allow+block overlaps with DNS resolution
 - **Auto-Allowlist** - Automatically whitelist CDN providers (Cloudflare, GitHub, AWS, GCP, Fastly)
 - **Alerting** - Gotify, email, and webhook notifications
 - **Bilingual** - English and French interface
@@ -130,8 +131,9 @@ Configuration file: `/etc/oustip/config.yaml`
 # Language (en, fr)
 language: en
 
-# Firewall backend (auto, iptables, nftables)
-backend: auto
+# Firewall backend (nftables, iptables, auto)
+# nftables is default and recommended for performance
+backend: nftables
 
 # Filtering mode
 # - raw: before conntrack (more performant)

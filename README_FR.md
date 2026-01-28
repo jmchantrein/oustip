@@ -13,12 +13,13 @@ OustIP est un outil haute performance pour bloquer les IPs malveillantes sur les
 
 ## Fonctionnalites
 
-- **Haute Performance** - Traitement de millions d'IPs avec une latence minimale
+- **Haute Performance** - Traitement de millions d'IPs avec une latence minimale (nftables par defaut)
 - **Securite Memoire** - Ecrit en Rust avec des garanties a la compilation
 - **Simple** - Installation et configuration en 5 minutes
 - **Non-Intrusif** - Ne modifie jamais les regles de pare-feu existantes
-- **Flexible** - Supporte iptables et nftables
+- **Flexible** - Supporte nftables (par defaut) et iptables
 - **Agregation Intelligente** - Optimisation CIDR pour reduire le nombre de regles
+- **Detection des Chevauchements** - Detection automatique des chevauchements allow+block avec resolution DNS
 - **Auto-Allowlist** - Liste blanche automatique des fournisseurs CDN (Cloudflare, GitHub, AWS, GCP, Fastly)
 - **Alertes** - Notifications via Gotify, email et webhook
 - **Bilingue** - Interface en anglais et francais

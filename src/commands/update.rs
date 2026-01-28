@@ -270,22 +270,60 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
 
 /// Detect IPs that are in both allowlist and blocklist (excluding assumed IPs)
 /// Returns: Vec<(ip_string, hostname, sources_where_found)>
+///
+/// Uses HashSet for O(1) lookup of exact matches, then checks CIDR containment.
 async fn detect_overlaps(
     allowlist_ips: &[IpNet],
     source_stats: &[(String, usize, Vec<IpNet>)],
     state: &OustipState,
 ) -> Vec<(String, String, Vec<String>)> {
+    use std::collections::HashMap;
+
+    // Build a HashMap of blocklist IPs -> sources for O(1) lookup
+    // Key: network address string, Value: (original CIDR, list of source names)
+    let mut blocklist_map: HashMap<String, (IpNet, Vec<String>)> = HashMap::new();
+
+    for (source_name, _, source_ips) in source_stats {
+        for block_ip in source_ips {
+            let key = block_ip.to_string();
+            blocklist_map
+                .entry(key)
+                .or_insert_with(|| (*block_ip, Vec::new()))
+                .1
+                .push(source_name.clone());
+        }
+    }
+
+    // Also build a Vec of all blocklist CIDRs for containment checks
+    // (for cases where allowlist /32 is contained in blocklist /24)
+    let all_blocklist_cidrs: Vec<(&IpNet, &str)> = source_stats
+        .iter()
+        .flat_map(|(name, _, ips)| ips.iter().map(move |ip| (ip, name.as_str())))
+        .collect();
+
     let mut overlaps = Vec::new();
 
-    // For each allowlist IP, check if it's in any blocklist source
     for allow_ip in allowlist_ips {
-        // Check if this allowlist entry overlaps with any blocklist entry
         let mut found_in_sources: Vec<String> = Vec::new();
+        let allow_key = allow_ip.to_string();
 
-        for (source_name, _, source_ips) in source_stats {
-            for block_ip in source_ips {
-                if networks_overlap(allow_ip, block_ip) && !found_in_sources.contains(source_name) {
-                    found_in_sources.push(source_name.clone());
+        // O(1) exact match check
+        if let Some((_, sources)) = blocklist_map.get(&allow_key) {
+            for source in sources {
+                if !found_in_sources.contains(source) {
+                    found_in_sources.push(source.clone());
+                }
+            }
+        }
+
+        // Check CIDR containment (allowlist contained in blocklist or vice versa)
+        // This is still O(n) but only for CIDR containment, not string matching
+        for (block_ip, source_name) in &all_blocklist_cidrs {
+            if allow_ip.to_string() != block_ip.to_string() && networks_overlap(allow_ip, block_ip)
+            {
+                let source_str = source_name.to_string();
+                if !found_in_sources.contains(&source_str) {
+                    found_in_sources.push(source_str);
                 }
             }
         }
@@ -311,8 +349,8 @@ async fn detect_overlaps(
         }
     }
 
-    // Limit to first 20 overlaps to avoid notification spam
-    overlaps.truncate(20);
+    // Limit to first 50 overlaps to avoid notification spam
+    overlaps.truncate(50);
     overlaps
 }
 

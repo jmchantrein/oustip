@@ -5,10 +5,10 @@
 language: en
 
 # Firewall backend
-# - auto     : auto-detect (prefers nftables if available)
-# - iptables : force iptables
-# - nftables : force nftables
-backend: auto
+# - nftables : nftables backend (default, recommended for performance)
+# - iptables : force iptables (legacy, slower for large blocklists)
+# - auto     : auto-detect (checks nftables first, then iptables)
+backend: nftables
 
 # Filtering mode
 # - raw      : table raw PREROUTING (before conntrack, more performant,

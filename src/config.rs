@@ -235,9 +235,12 @@ impl Config {
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
-    #[default]
+    /// Auto-detect backend (checks nftables first, then iptables)
     Auto,
+    /// Use iptables/ipset backend
     Iptables,
+    /// Use nftables backend (default, recommended for performance)
+    #[default]
     Nftables,
 }
 
