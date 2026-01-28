@@ -1,0 +1,91 @@
+[package]
+name = "oustip"
+version = "0.1.0"
+edition = "2021"
+authors = ["OustIP Contributors"]
+description = "IP Blocklist Manager for Linux Gateways"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/jmchantrein/oustip"
+keywords = ["firewall", "blocklist", "iptables", "nftables", "security"]
+categories = ["command-line-utilities", "network-programming"]
+rust-version = "1.75"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client (rustls for no OpenSSL dependency)
+reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
+
+# IP/CIDR parsing and aggregation
+ipnet = "2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Config
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+
+# i18n
+rust-i18n = "3"
+
+# Email (SMTP)
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async traits
+async-trait = "0.1"
+
+# Futures utilities
+futures = "0.3"
+
+# System calls
+libc = "0.2"
+
+# Secure memory handling
+zeroize = { version = "1", features = ["derive"] }
+
+# Secure temporary files
+tempfile = "3"
+
+# File locking
+fs2 = "0.4"
+
+# DNS resolution
+dns-lookup = "2"
+
+# System hostname
+hostname = "0.4"
+
+[dev-dependencies]
+mockall = "0.13"
+tokio-test = "0.4"
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+wiremock = "0.6"
+
+[[bench]]
+name = "aggregation"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[[bin]]
+name = "oustip"
+path = "src/main.rs"

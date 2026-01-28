@@ -1,0 +1,90 @@
+# Traductions françaises pour OustIP
+
+# Général
+app_name: OustIP
+app_description: Gestionnaire de blocklists IP pour passerelles Linux
+
+# Statut
+status_enabled: ACTIVÉ
+status_disabled: DÉSACTIVÉ
+status_active: Actif
+status_inactive: Inactif
+
+# Commandes
+cmd_installing: Installation d'OustIP...
+cmd_uninstalling: Désinstallation d'OustIP...
+cmd_updating: Mise à jour des blocklists...
+cmd_enabling: Activation d'OustIP...
+cmd_disabling: Désactivation d'OustIP...
+
+# Téléchargement
+fetch_start: "Téléchargement de %{name}..."
+fetch_success: "Téléchargé %{name} - %{count} IPs"
+fetch_failed: "Échec du téléchargement de %{name}: %{error}"
+fetch_retry: "Nouvelle tentative pour %{name} (essai %{attempt})..."
+
+# Agrégation
+aggregate_start: Agrégation des plages IP...
+aggregate_result: "Agrégé %{input} entrées → %{output} plages optimisées"
+
+# Pare-feu
+firewall_applying: Application des règles de pare-feu...
+firewall_applied: "Appliqué %{count} entrées à %{backend}"
+firewall_removing: Suppression des règles de pare-feu...
+firewall_removed: Règles de pare-feu supprimées
+
+# Alertes
+alert_update_success: Blocklist mise à jour avec succès
+alert_update_failed: Échec de la mise à jour de la blocklist
+alert_fetch_failed: "Échec du téléchargement de %{source}"
+alert_outbound_blocked: Connexion sortante vers IP bloquée détectée
+
+# Erreurs
+error_not_installed: OustIP n'est pas installé. Lancez 'oustip install' d'abord.
+error_already_installed: OustIP est déjà installé.
+error_permission_denied: Permission refusée. Lancez avec sudo.
+error_no_backend: Aucun backend pare-feu disponible (nft ou iptables requis).
+error_config_not_found: "Fichier de configuration non trouvé : %{path}"
+error_invalid_ip: "Adresse IP invalide : %{ip}"
+
+# Messages de succès
+success_install: Installation terminée !
+success_uninstall: OustIP désinstallé avec succès.
+success_update: Blocklist mise à jour avec succès.
+success_enable: OustIP activé.
+success_disable: OustIP désactivé.
+
+# Messages d'information
+info_next_steps: "Prochaines étapes :"
+info_edit_config: "  1. Modifier la configuration : %{path}"
+info_run_update: "  2. Appliquer les règles : oustip update"
+info_check_status: "  3. Vérifier le statut : oustip status"
+
+# Statistiques
+stats_title: STATISTIQUES DE BLOCAGE OUSTIP
+stats_source: SOURCE
+stats_ips: IPs
+stats_entries: ENTRÉES
+stats_total: TOTAL
+stats_coverage: "Couverture : %{ips} IPs = %{percent}% de l'espace IPv4 public"
+stats_packets_blocked: "Paquets bloqués : %{count}"
+stats_bytes_blocked: "Octets bloqués : %{bytes}"
+stats_last_update: "Dernière mise à jour : %{time}"
+stats_never: jamais
+
+# IPv6
+ipv6_enabled: IPv6 est activé
+ipv6_disabled: IPv6 est désactivé
+ipv6_enabling: Activation d'IPv6...
+ipv6_disabling: Désactivation d'IPv6...
+
+# Commande check
+check_blocked: "L'IP %{ip} est BLOQUÉE"
+check_not_blocked: "L'IP %{ip} n'est PAS bloquée"
+check_source: "Source : %{source}"
+
+# Allowlist
+allowlist_added: "Ajouté %{ip} à l'allowlist"
+allowlist_removed: "Retiré %{ip} de l'allowlist"
+allowlist_empty: L'allowlist est vide
+allowlist_reload: Allowlist rechargée depuis la configuration

@@ -1,0 +1,90 @@
+# English translations for OustIP
+
+# General
+app_name: OustIP
+app_description: IP Blocklist Manager for Linux Gateways
+
+# Status
+status_enabled: ENABLED
+status_disabled: DISABLED
+status_active: Active
+status_inactive: Inactive
+
+# Commands
+cmd_installing: Installing OustIP...
+cmd_uninstalling: Uninstalling OustIP...
+cmd_updating: Updating blocklists...
+cmd_enabling: Enabling OustIP...
+cmd_disabling: Disabling OustIP...
+
+# Fetching
+fetch_start: "Fetching %{name}..."
+fetch_success: "Fetched %{name} - %{count} IPs"
+fetch_failed: "Failed to fetch %{name}: %{error}"
+fetch_retry: "Retrying %{name} (attempt %{attempt})..."
+
+# Aggregation
+aggregate_start: Aggregating IP ranges...
+aggregate_result: "Aggregated %{input} entries → %{output} optimized ranges"
+
+# Firewall
+firewall_applying: Applying firewall rules...
+firewall_applied: "Applied %{count} entries to %{backend}"
+firewall_removing: Removing firewall rules...
+firewall_removed: Firewall rules removed
+
+# Alerts
+alert_update_success: Blocklist updated successfully
+alert_update_failed: Blocklist update failed
+alert_fetch_failed: "Failed to fetch %{source}"
+alert_outbound_blocked: Outbound connection to blocked IP detected
+
+# Errors
+error_not_installed: OustIP is not installed. Run 'oustip install' first.
+error_already_installed: OustIP is already installed.
+error_permission_denied: Permission denied. Run with sudo.
+error_no_backend: No firewall backend available (nft or iptables required).
+error_config_not_found: "Configuration file not found: %{path}"
+error_invalid_ip: "Invalid IP address: %{ip}"
+
+# Success messages
+success_install: Installation complete!
+success_uninstall: OustIP uninstalled successfully.
+success_update: Blocklist updated successfully.
+success_enable: OustIP enabled.
+success_disable: OustIP disabled.
+
+# Info messages
+info_next_steps: "Next steps:"
+info_edit_config: "  1. Edit configuration: %{path}"
+info_run_update: "  2. Apply rules: oustip update"
+info_check_status: "  3. Check status: oustip status"
+
+# Stats
+stats_title: OUSTIP BLOCKLIST STATISTICS
+stats_source: SOURCE
+stats_ips: IPs
+stats_entries: ENTRIES
+stats_total: TOTAL
+stats_coverage: "Coverage: %{ips} IPs = %{percent}% of public IPv4 space"
+stats_packets_blocked: "Packets blocked: %{count}"
+stats_bytes_blocked: "Bytes blocked: %{bytes}"
+stats_last_update: "Last update: %{time}"
+stats_never: never
+
+# IPv6
+ipv6_enabled: IPv6 is enabled
+ipv6_disabled: IPv6 is disabled
+ipv6_enabling: Enabling IPv6...
+ipv6_disabling: Disabling IPv6...
+
+# Check command
+check_blocked: "IP %{ip} is BLOCKED"
+check_not_blocked: "IP %{ip} is NOT blocked"
+check_source: "Source: %{source}"
+
+# Allowlist
+allowlist_added: "Added %{ip} to allowlist"
+allowlist_removed: "Removed %{ip} from allowlist"
+allowlist_empty: Allowlist is empty
+allowlist_reload: Allowlist reloaded from configuration

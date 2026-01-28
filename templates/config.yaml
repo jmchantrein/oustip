@@ -1,0 +1,103 @@
+# OustIP Configuration
+# https://github.com/jmchantrein/oustip
+
+# Language for messages (en, fr)
+language: en
+
+# Firewall backend
+# - nftables : nftables backend (default, recommended for performance)
+# - iptables : force iptables (legacy, slower for large blocklists)
+# - auto     : auto-detect (checks nftables first, then iptables)
+backend: nftables
+
+# Filtering mode
+# - raw      : table raw PREROUTING (before conntrack, more performant,
+#              but blocks responses to LAN-initiated connections to blocked IPs)
+# - conntrack: after conntrack (allows responses even if destination IP is blocked)
+mode: conntrack
+
+# Alert when a blocked IP is contacted from LAN
+# (possible sign of internal compromise)
+# Only relevant in mode: conntrack
+alert_outbound_to_blocklist: true
+
+# Alert destinations
+alerts:
+  gotify:
+    enabled: false
+    url: "https://gotify.example.com"
+    token: ""
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    smtp_user: ""
+    smtp_password: ""
+    from: ""
+    to: ""
+  webhook:
+    enabled: false
+    url: ""
+    headers: {}
+
+# Blocklist sources
+# Format compatible with FireHOL iplists.firehol.org
+blocklists:
+  # Safe lists (almost zero false positives)
+  - name: firehol_level1
+    url: https://iplists.firehol.org/files/firehol_level1.netset
+    enabled: true
+  - name: firehol_level2
+    url: https://iplists.firehol.org/files/firehol_level2.netset
+    enabled: true
+  - name: spamhaus_drop
+    url: https://iplists.firehol.org/files/spamhaus_drop.netset
+    enabled: true
+  - name: spamhaus_edrop
+    url: https://iplists.firehol.org/files/spamhaus_edrop.netset
+    enabled: true
+  - name: dshield
+    url: https://iplists.firehol.org/files/dshield.netset
+    enabled: true
+
+  # Aggressive lists (may contain false positives like GitHub, CDN)
+  - name: firehol_level3
+    url: https://iplists.firehol.org/files/firehol_level3.netset
+    enabled: false
+  - name: firehol_level4
+    url: https://iplists.firehol.org/files/firehol_level4.netset
+    enabled: false
+
+# Automatic allowlists (CDN/Cloud provider IP ranges)
+# Prevents blocking legitimate services present in aggressive lists
+auto_allowlist:
+  cloudflare: true    # https://www.cloudflare.com/ips-v4
+  github: true        # https://api.github.com/meta
+  google_cloud: false # https://www.gstatic.com/ipranges/cloud.json
+  aws: false          # https://ip-ranges.amazonaws.com/ip-ranges.json
+  fastly: false       # https://api.fastly.com/public-ip-list
+
+# Manual allowlist (IPs/CIDRs to never block)
+allowlist:
+  - "192.168.0.0/16"    # RFC1918 - private networks
+  - "10.0.0.0/8"        # RFC1918 - private networks
+  - "172.16.0.0/12"     # RFC1918 - private networks
+  - "127.0.0.0/8"       # Loopback
+
+# Update interval for systemd timer (e.g., 4h, 1d, 30m)
+update_interval: "4h"
+
+# IPv6 configuration
+ipv6:
+  # Boot state (disabled, enabled, unchanged)
+  # - disabled  : disable IPv6 at boot
+  # - enabled   : enable IPv6 at boot
+  # - unchanged : don't touch system config
+  boot_state: unchanged
+
+# Preset (minimal, recommended, full, paranoid)
+# - minimal    : spamhaus_drop, spamhaus_edrop, dshield (almost zero false positives)
+# - recommended: minimal + firehol_level1, firehol_level2
+# - full       : recommended + firehol_level3
+# - paranoid   : full + firehol_level4 (false positives possible)
+preset: recommended

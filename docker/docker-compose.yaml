@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  oustip:
+    image: jmchantrein/oustip:latest
+    container_name: oustip
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./config.yaml:/etc/oustip/config.yaml:ro
+      - oustip-data:/var/lib/oustip
+      - /var/log:/var/log
+    command: ["update", "--quiet"]
+    # Run update every 4 hours
+    # For continuous operation, use a cron container or systemd timer on the host
+
+  # Optional: Run as a one-shot update
+  oustip-update:
+    image: jmchantrein/oustip:latest
+    profiles: ["update"]
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./config.yaml:/etc/oustip/config.yaml:ro
+      - oustip-data:/var/lib/oustip
+    command: ["update"]
+
+  # Optional: Check status
+  oustip-status:
+    image: jmchantrein/oustip:latest
+    profiles: ["status"]
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./config.yaml:/etc/oustip/config.yaml:ro
+      - oustip-data:/var/lib/oustip
+    command: ["status"]
+
+volumes:
+  oustip-data:
