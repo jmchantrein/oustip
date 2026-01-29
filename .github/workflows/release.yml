@@ -84,7 +84,6 @@ jobs:
     name: Build and Push Docker
     needs: build
     runs-on: ubuntu-latest
-    if: github.repository == 'jmchantrein/oustip'
     permissions:
       contents: read
       packages: write
