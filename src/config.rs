@@ -7,8 +7,7 @@ use std::env;
 use std::path::Path;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// Valid preset values
-const VALID_PRESETS: &[&str] = &["minimal", "recommended", "full", "paranoid"];
+use crate::validation::{is_valid_interval, VALID_PRESETS};
 
 /// Secure string type that zeroizes memory on drop
 /// Used for sensitive data like tokens and passwords
@@ -46,21 +45,6 @@ impl From<&str> for SecureString {
     fn from(s: &str) -> Self {
         Self(s.to_string())
     }
-}
-
-/// Timer interval validation (e.g., "4h", "30m", "1d")
-/// Requires ASCII-only input to prevent Unicode-related edge cases
-fn is_valid_interval(interval: &str) -> bool {
-    // Reject non-ASCII to prevent Unicode edge cases with split_at
-    if !interval.is_ascii() || interval.len() < 2 {
-        return false;
-    }
-
-    // Safe to use chars() since we verified ASCII-only
-    let suffix = interval.chars().last().unwrap();
-    let num_part = &interval[..interval.len() - 1];
-
-    matches!(suffix, 's' | 'm' | 'h' | 'd') && num_part.parse::<u32>().is_ok()
 }
 
 /// Main configuration structure

@@ -9,6 +9,7 @@ use crate::dns::resolve_ptr_str;
 use crate::enforcer::check_root;
 use crate::lock::LockGuard;
 use crate::stats::OustipState;
+use crate::utils::format_count_with_separator;
 
 /// Run the blocklist command
 pub async fn run(action: BlocklistAction, config_path: &Path) -> Result<()> {
@@ -139,7 +140,7 @@ async fn list_blocklists(config_path: &Path) -> Result<()> {
             .unwrap_or(0);
 
         if ip_count > 0 {
-            println!("  [x] {} ({} IPs)", b.name, format_count(ip_count as usize));
+            println!("  [x] {} ({} IPs)", b.name, format_count_with_separator(ip_count as usize));
         } else {
             println!("  [x] {}", b.name);
         }
@@ -183,7 +184,7 @@ async fn show_blocklist(name: &str, dns: bool, limit: usize, config_path: &Path)
             println!(
                 "Blocklist: {} ({} IPs)",
                 s.name,
-                format_count(s.ip_count as usize)
+                format_count_with_separator(s.ip_count as usize)
             );
             println!();
 
@@ -220,72 +221,4 @@ async fn show_blocklist(name: &str, dns: bool, limit: usize, config_path: &Path)
     Ok(())
 }
 
-/// Format number with thousands separator
-fn format_count(n: usize) -> String {
-    let s = n.to_string();
-    let mut result = String::new();
-    for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push(',');
-        }
-        result.push(c);
-    }
-    result.chars().rev().collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_count_zero() {
-        assert_eq!(format_count(0), "0");
-    }
-
-    #[test]
-    fn test_format_count_single_digit() {
-        assert_eq!(format_count(5), "5");
-    }
-
-    #[test]
-    fn test_format_count_double_digit() {
-        assert_eq!(format_count(42), "42");
-    }
-
-    #[test]
-    fn test_format_count_triple_digit() {
-        assert_eq!(format_count(999), "999");
-    }
-
-    #[test]
-    fn test_format_count_thousands() {
-        assert_eq!(format_count(1000), "1,000");
-        assert_eq!(format_count(1234), "1,234");
-        assert_eq!(format_count(9999), "9,999");
-    }
-
-    #[test]
-    fn test_format_count_ten_thousands() {
-        assert_eq!(format_count(10000), "10,000");
-        assert_eq!(format_count(12345), "12,345");
-        assert_eq!(format_count(99999), "99,999");
-    }
-
-    #[test]
-    fn test_format_count_hundred_thousands() {
-        assert_eq!(format_count(100000), "100,000");
-        assert_eq!(format_count(123456), "123,456");
-    }
-
-    #[test]
-    fn test_format_count_millions() {
-        assert_eq!(format_count(1000000), "1,000,000");
-        assert_eq!(format_count(1234567), "1,234,567");
-    }
-
-    #[test]
-    fn test_format_count_billions() {
-        assert_eq!(format_count(1000000000), "1,000,000,000");
-        assert_eq!(format_count(1234567890), "1,234,567,890");
-    }
-}
+// Note: Tests for format_count_with_separator are in src/utils.rs

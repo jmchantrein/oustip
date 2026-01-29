@@ -3,8 +3,7 @@
 use crate::aggregator::{count_ips, coverage_percent};
 use crate::config::Config;
 use crate::enforcer::create_backend;
-use crate::fetcher::format_count;
-use crate::utils::{format_bytes, truncate};
+use crate::utils::{format_bytes, format_count, truncate};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Utc};
 use ipnet::IpNet;
