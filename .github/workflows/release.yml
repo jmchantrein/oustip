@@ -19,8 +19,6 @@ jobs:
             name: oustip-linux-amd64
           - target: aarch64-unknown-linux-musl
             name: oustip-linux-arm64
-          - target: armv7-unknown-linux-musleabihf
-            name: oustip-linux-armv7
 
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +76,6 @@ jobs:
           files: |
             artifacts/oustip-linux-amd64/oustip-linux-amd64
             artifacts/oustip-linux-arm64/oustip-linux-arm64
-            artifacts/oustip-linux-armv7/oustip-linux-armv7
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
