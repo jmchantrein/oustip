@@ -4,7 +4,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 > [!WARNING]
-> This project is currently under active development. Features may change, and the software is not yet ready for production use.
+> This project is currently under development. Features may change, and the software is not yet ready for production use.
 
 **IP Blocklist Manager for Linux Gateways**
 
