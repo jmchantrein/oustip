@@ -1,8 +1,8 @@
 //! Benchmarks for CIDR aggregation performance.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use std::hint::black_box;
 use ipnet::IpNet;
+use std::hint::black_box;
 use std::str::FromStr;
 
 /// Generate random-ish IPv4 addresses for benchmarking
