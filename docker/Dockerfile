@@ -1,7 +1,7 @@
 # OustIP Docker Image
 # Multi-stage build for minimal image size
 
-FROM alpine:3.21 AS runtime
+FROM alpine:latest AS runtime
 
 # Install runtime dependencies
 RUN apk add --no-cache \
