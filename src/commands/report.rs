@@ -427,7 +427,10 @@ mod tests {
             "markdown".parse::<ReportFormat>().unwrap(),
             ReportFormat::Markdown
         );
-        assert_eq!("md".parse::<ReportFormat>().unwrap(), ReportFormat::Markdown);
+        assert_eq!(
+            "md".parse::<ReportFormat>().unwrap(),
+            ReportFormat::Markdown
+        );
         assert_eq!(
             "MARKDOWN".parse::<ReportFormat>().unwrap(),
             ReportFormat::Markdown
