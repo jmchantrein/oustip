@@ -108,7 +108,7 @@ impl Config {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
-        let config: Config = serde_yml::from_str(&content)
+        let config: Config = serde_saphyr::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
 
         // Validate configuration
@@ -174,7 +174,8 @@ impl Config {
         use tempfile::NamedTempFile;
 
         let path = path.as_ref();
-        let content = serde_yml::to_string(self).with_context(|| "Failed to serialize config")?;
+        let content =
+            serde_saphyr::to_string(self).with_context(|| "Failed to serialize config")?;
 
         // Create temporary file in the same directory for atomic rename
         let parent_dir = path.parent().unwrap_or(Path::new("/etc/oustip"));
@@ -659,7 +660,7 @@ impl ConfigV2 {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
-        let config: ConfigV2 = serde_yml::from_str(&content)
+        let config: ConfigV2 = serde_saphyr::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
 
         config.validate()?;
@@ -712,7 +713,9 @@ impl ConfigV2 {
             // Basic preset name validation (format only)
             // Full validation against presets.yaml is done in validate_preset_references
             if let Some(ref preset) = iface_config.blocklist_preset {
-                if preset.is_empty() || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
+                if preset.is_empty()
+                    || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                {
                     anyhow::bail!(
                         "Invalid blocklist_preset name '{}' for interface '{}'. Use alphanumeric, underscore or hyphen only.",
                         preset,
@@ -721,7 +724,9 @@ impl ConfigV2 {
                 }
             }
             if let Some(ref preset) = iface_config.allowlist_preset {
-                if preset.is_empty() || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
+                if preset.is_empty()
+                    || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                {
                     anyhow::bail!(
                         "Invalid allowlist_preset name '{}' for interface '{}'. Use alphanumeric, underscore or hyphen only.",
                         preset,
@@ -767,7 +772,8 @@ impl ConfigV2 {
             // Validate blocklist_preset
             if let Some(ref preset) = iface_config.blocklist_preset {
                 if !blocklist_presets.iter().any(|p| p.as_str() == preset) {
-                    let available: Vec<&str> = blocklist_presets.iter().map(|s| s.as_str()).collect();
+                    let available: Vec<&str> =
+                        blocklist_presets.iter().map(|s| s.as_str()).collect();
                     anyhow::bail!(
                         "Interface '{}': blocklist_preset '{}' not found in presets.yaml.\n\
                          Available blocklist presets: {}",
@@ -781,7 +787,8 @@ impl ConfigV2 {
             // Validate allowlist_preset
             if let Some(ref preset) = iface_config.allowlist_preset {
                 if !allowlist_presets.iter().any(|p| p.as_str() == preset) {
-                    let available: Vec<&str> = allowlist_presets.iter().map(|s| s.as_str()).collect();
+                    let available: Vec<&str> =
+                        allowlist_presets.iter().map(|s| s.as_str()).collect();
                     anyhow::bail!(
                         "Interface '{}': allowlist_preset '{}' not found in presets.yaml.\n\
                          Available allowlist presets: {}",
@@ -794,8 +801,12 @@ impl ConfigV2 {
 
             // Validate outbound_monitor.blocklist_preset
             if let Some(ref monitor) = iface_config.outbound_monitor {
-                if !blocklist_presets.iter().any(|p| p.as_str() == monitor.blocklist_preset) {
-                    let available: Vec<&str> = blocklist_presets.iter().map(|s| s.as_str()).collect();
+                if !blocklist_presets
+                    .iter()
+                    .any(|p| p.as_str() == monitor.blocklist_preset)
+                {
+                    let available: Vec<&str> =
+                        blocklist_presets.iter().map(|s| s.as_str()).collect();
                     anyhow::bail!(
                         "Interface '{}': outbound_monitor.blocklist_preset '{}' not found in presets.yaml.\n\
                          Available blocklist presets: {}",
@@ -835,9 +846,7 @@ impl ConfigV2 {
     }
 
     /// Generate config from detected interfaces
-    pub fn from_detected_interfaces(
-        interfaces: &[crate::interfaces::DetectedInterface],
-    ) -> Self {
+    pub fn from_detected_interfaces(interfaces: &[crate::interfaces::DetectedInterface]) -> Self {
         let mut config = Self::default();
 
         for iface in interfaces {
@@ -848,9 +857,7 @@ impl ConfigV2 {
                 crate::interfaces::InterfaceMode::Lan => {
                     InterfaceConfig::lan("rfc1918", "recommended", OutboundAction::Alert)
                 }
-                crate::interfaces::InterfaceMode::Trusted => {
-                    InterfaceConfig::trusted()
-                }
+                crate::interfaces::InterfaceMode::Trusted => InterfaceConfig::trusted(),
             };
 
             config.interfaces.insert(iface.name.clone(), iface_config);
@@ -862,7 +869,7 @@ impl ConfigV2 {
     /// Generate YAML configuration with comments
     pub fn generate_yaml_with_comments(&self) -> Result<String> {
         // For now, just serialize. In production, we'd use a template
-        let yaml = serde_yml::to_string(self)?;
+        let yaml = serde_saphyr::to_string(self)?;
         Ok(yaml)
     }
 }
@@ -900,8 +907,8 @@ mod tests {
     #[test]
     fn test_serialize_deserialize() {
         let config = Config::default();
-        let yaml = serde_yml::to_string(&config).unwrap();
-        let parsed: Config = serde_yml::from_str(&yaml).unwrap();
+        let yaml = serde_saphyr::to_string(&config).unwrap();
+        let parsed: Config = serde_saphyr::from_str(&yaml).unwrap();
         assert_eq!(parsed.language, config.language);
         assert_eq!(parsed.preset, config.preset);
     }
@@ -957,7 +964,7 @@ url: "https://example.com/webhook"
 headers:
   "X-Evil": "value\r\ninjected"
 "#;
-        let result: Result<WebhookConfig, _> = serde_yml::from_str(yaml);
+        let result: Result<WebhookConfig, _> = serde_saphyr::from_str(yaml);
         assert!(result.is_err());
     }
 
@@ -969,7 +976,7 @@ url: "https://example.com/webhook"
 headers:
   "X-Header:Invalid": "value"
 "#;
-        let result: Result<WebhookConfig, _> = serde_yml::from_str(yaml);
+        let result: Result<WebhookConfig, _> = serde_saphyr::from_str(yaml);
         assert!(result.is_err());
     }
 
@@ -982,7 +989,7 @@ headers:
   "X-Custom-Header": "some-value"
   "Authorization": "Bearer token"
 "#;
-        let result: Result<WebhookConfig, _> = serde_yml::from_str(yaml);
+        let result: Result<WebhookConfig, _> = serde_saphyr::from_str(yaml);
         assert!(result.is_ok());
         let config = result.unwrap();
         assert_eq!(config.headers.len(), 2);

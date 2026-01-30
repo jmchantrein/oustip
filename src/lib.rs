@@ -24,7 +24,7 @@
 //! │  CLI (clap)                                                 │
 //! │    └── Commands: install, update, status, check, report... │
 //! ├─────────────────────────────────────────────────────────────┤
-//! │  Config (serde_yml)                                         │
+//! │  Config (serde-saphyr)                                       │
 //! │    └── Presets: minimal, recommended, full, paranoid        │
 //! ├─────────────────────────────────────────────────────────────┤
 //! │  Fetcher (reqwest + rustls)                                 │
@@ -126,5 +126,7 @@ pub mod stats;
 pub mod utils;
 pub mod validation;
 
-pub use cli::{AllowlistAction, Cli, Commands, InterfacesAction, Ipv6Action, PresetsAction, UpdateTarget};
+pub use cli::{
+    AllowlistAction, Cli, Commands, InterfacesAction, Ipv6Action, PresetsAction, UpdateTarget,
+};
 pub use config::Config;

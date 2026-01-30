@@ -140,7 +140,7 @@ impl PresetsConfig {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read presets file: {:?}", path.as_ref()))?;
 
-        let config: PresetsConfig = serde_yml::from_str(&content)
+        let config: PresetsConfig = serde_saphyr::from_str(&content)
             .with_context(|| format!("Failed to parse presets file: {:?}", path.as_ref()))?;
 
         config.validate()?;
@@ -235,9 +235,7 @@ impl PresetsConfig {
                 }
                 visited.push(preset_name);
 
-                current = presets
-                    .get(preset_name)
-                    .and_then(|p| p.extends.as_deref());
+                current = presets.get(preset_name).and_then(|p| p.extends.as_deref());
             }
         }
         Ok(())
@@ -260,9 +258,9 @@ impl PresetsConfig {
         presets: &HashMap<String, PresetDef>,
         preset_type: &str,
     ) -> Result<Vec<String>> {
-        let preset = presets.get(name).ok_or_else(|| {
-            anyhow::anyhow!("Unknown {} preset: '{}'", preset_type, name)
-        })?;
+        let preset = presets
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown {} preset: '{}'", preset_type, name))?;
 
         let mut sources = Vec::new();
 
@@ -296,7 +294,10 @@ impl PresetsConfig {
     }
 
     /// Get allowlist data for a preset (both static and dynamic sources)
-    pub fn get_allowlist_sources(&self, preset_name: &str) -> Result<Vec<(String, &AllowlistSourceDef)>> {
+    pub fn get_allowlist_sources(
+        &self,
+        preset_name: &str,
+    ) -> Result<Vec<(String, &AllowlistSourceDef)>> {
         let sources = self.resolve_allowlist_preset(preset_name)?;
         let mut result = Vec::new();
 
@@ -422,10 +423,7 @@ impl PresetsConfig {
                     fr: "Défaut recommandé - bon équilibre".to_string(),
                 },
                 extends: Some("minimal".to_string()),
-                sources: vec![
-                    "firehol_level1".to_string(),
-                    "firehol_level2".to_string(),
-                ],
+                sources: vec!["firehol_level1".to_string(), "firehol_level2".to_string()],
             },
         );
         blocklist_presets.insert(

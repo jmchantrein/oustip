@@ -215,7 +215,8 @@ impl StatsManager {
 
     /// Get path for preset stats file
     fn preset_stats_path(&self, name: &str, preset_type: &str) -> PathBuf {
-        self.stats_dir.join(format!("preset_{}_{}.yaml", preset_type, name))
+        self.stats_dir
+            .join(format!("preset_{}_{}.yaml", preset_type, name))
     }
 
     /// Get path for global stats file
@@ -233,7 +234,7 @@ impl StatsManager {
         if path.exists() {
             let content = fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read interface stats: {:?}", path))?;
-            let stats: InterfaceStats = serde_yml::from_str(&content)
+            let stats: InterfaceStats = serde_saphyr::from_str(&content)
                 .with_context(|| format!("Failed to parse interface stats: {:?}", path))?;
             Ok(stats)
         } else {
@@ -246,8 +247,7 @@ impl StatsManager {
         self.ensure_dir()?;
         let path = self.interface_stats_path(&stats.name);
 
-        let yaml = serde_yml::to_string(stats)
-            .context("Failed to serialize interface stats")?;
+        let yaml = serde_saphyr::to_string(stats).context("Failed to serialize interface stats")?;
 
         // Add header comment
         let content = format!(
@@ -296,7 +296,7 @@ impl StatsManager {
         if path.exists() {
             let content = fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read preset stats: {:?}", path))?;
-            let stats: PresetStats = serde_yml::from_str(&content)
+            let stats: PresetStats = serde_saphyr::from_str(&content)
                 .with_context(|| format!("Failed to parse preset stats: {:?}", path))?;
             Ok(stats)
         } else {
@@ -309,8 +309,7 @@ impl StatsManager {
         self.ensure_dir()?;
         let path = self.preset_stats_path(&stats.name, &stats.preset_type);
 
-        let yaml = serde_yml::to_string(stats)
-            .context("Failed to serialize preset stats")?;
+        let yaml = serde_saphyr::to_string(stats).context("Failed to serialize preset stats")?;
 
         // Add header comment
         let content = format!(
@@ -319,7 +318,9 @@ impl StatsManager {
              # This file is auto-generated but can be manually edited.\n\n{}",
             stats.name,
             stats.preset_type,
-            stats.last_fetch.map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            stats
+                .last_fetch
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
                 .unwrap_or_else(|| "never".to_string()),
             yaml
         );
@@ -337,7 +338,7 @@ impl StatsManager {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.starts_with("preset_") && name.ends_with(".yaml") {
                     let content = fs::read_to_string(entry.path())?;
-                    if let Ok(s) = serde_yml::from_str(&content) {
+                    if let Ok(s) = serde_saphyr::from_str(&content) {
                         stats.push(s);
                     }
                 }
@@ -356,7 +357,7 @@ impl StatsManager {
         if path.exists() {
             let content = fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read global stats: {:?}", path))?;
-            let stats: GlobalStats = serde_yml::from_str(&content)
+            let stats: GlobalStats = serde_saphyr::from_str(&content)
                 .with_context(|| format!("Failed to parse global stats: {:?}", path))?;
             Ok(stats)
         } else {
@@ -369,8 +370,7 @@ impl StatsManager {
         self.ensure_dir()?;
         let path = self.global_stats_path();
 
-        let yaml = serde_yml::to_string(stats)
-            .context("Failed to serialize global stats")?;
+        let yaml = serde_saphyr::to_string(stats).context("Failed to serialize global stats")?;
 
         // Add header comment
         let content = format!(
@@ -379,7 +379,9 @@ impl StatsManager {
              # Service started: {}\n\
              # This file is auto-generated but can be manually edited.\n\n{}",
             stats.last_update.format("%Y-%m-%d %H:%M:%S UTC"),
-            stats.service_start.map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            stats
+                .service_start
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
                 .unwrap_or_else(|| "unknown".to_string()),
             yaml
         );
@@ -405,8 +407,9 @@ impl StatsManager {
     /// Remove all stats (for uninstall)
     pub fn remove_all_stats(&self) -> Result<()> {
         if self.stats_dir.exists() {
-            fs::remove_dir_all(&self.stats_dir)
-                .with_context(|| format!("Failed to remove stats directory: {:?}", self.stats_dir))?;
+            fs::remove_dir_all(&self.stats_dir).with_context(|| {
+                format!("Failed to remove stats directory: {:?}", self.stats_dir)
+            })?;
         }
         Ok(())
     }
@@ -422,8 +425,13 @@ impl Default for StatsManager {
 fn atomic_write(path: &Path, content: &str) -> Result<()> {
     use std::io::Write;
 
-    let parent = path.parent().ok_or_else(|| anyhow::anyhow!("Invalid path"))?;
-    let temp_path = parent.join(format!(".{}.tmp", path.file_name().unwrap().to_string_lossy()));
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Invalid path"))?;
+    let temp_path = parent.join(format!(
+        ".{}.tmp",
+        path.file_name().unwrap().to_string_lossy()
+    ));
 
     let mut file = fs::File::create(&temp_path)
         .with_context(|| format!("Failed to create temp file: {:?}", temp_path))?;

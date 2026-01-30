@@ -444,7 +444,11 @@ mod tests {
     fn test_cli_install_with_preset() {
         let cli = Cli::try_parse_from(["oustip", "install", "--preset", "paranoid"]).unwrap();
         match cli.command {
-            Commands::Install { preset, headless, config_file } => {
+            Commands::Install {
+                preset,
+                headless,
+                config_file,
+            } => {
                 assert_eq!(preset, Some("paranoid".to_string()));
                 assert!(!headless);
                 assert!(config_file.is_none());

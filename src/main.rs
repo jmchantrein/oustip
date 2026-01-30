@@ -39,9 +39,11 @@ async fn main() -> Result<()> {
 
     // Execute command
     match cli.command {
-        Commands::Install { preset, headless, config_file } => {
-            oustip::commands::install::run(preset, headless, config_file, &cli.config).await
-        }
+        Commands::Install {
+            preset,
+            headless,
+            config_file,
+        } => oustip::commands::install::run(preset, headless, config_file, &cli.config).await,
         Commands::Update { target, dry_run } => {
             oustip::commands::update::run(target, dry_run, &cli.config).await
         }

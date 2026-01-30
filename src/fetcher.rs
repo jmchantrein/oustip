@@ -173,10 +173,7 @@ impl Fetcher {
         match source {
             AllowlistSourceDef::Static { ranges, .. } => {
                 // Parse static ranges
-                let ips: Vec<IpNet> = ranges
-                    .iter()
-                    .filter_map(|s| s.parse().ok())
-                    .collect();
+                let ips: Vec<IpNet> = ranges.iter().filter_map(|s| s.parse().ok()).collect();
                 info!("Loaded {} static ranges from {}", ips.len(), name);
                 Ok(ips)
             }
@@ -189,7 +186,10 @@ impl Fetcher {
                 let mut all_ips = Vec::new();
 
                 // Fetch IPv4
-                match self.fetch_dynamic_allowlist(url, json_path.as_deref()).await {
+                match self
+                    .fetch_dynamic_allowlist(url, json_path.as_deref())
+                    .await
+                {
                     Ok(ips) => {
                         info!("Fetched {} IPv4 ranges from {}", ips.len(), name);
                         all_ips.extend(ips);
@@ -201,7 +201,10 @@ impl Fetcher {
 
                 // Fetch IPv6 if URL provided
                 if let Some(v6_url) = url_v6 {
-                    match self.fetch_dynamic_allowlist(v6_url, json_path.as_deref()).await {
+                    match self
+                        .fetch_dynamic_allowlist(v6_url, json_path.as_deref())
+                        .await
+                    {
                         Ok(ips) => {
                             info!("Fetched {} IPv6 ranges from {}", ips.len(), name);
                             all_ips.extend(ips);
@@ -241,8 +244,7 @@ impl Fetcher {
     /// - "prefixes.ipv4Prefix" -> extracts from root.prefixes[].ipv4Prefix
     /// - "addresses" -> extracts from root.addresses array
     fn parse_json_ip_list(&self, content: &str, path: &str) -> Result<Vec<IpNet>> {
-        let json: Value = serde_json::from_str(content)
-            .context("Failed to parse JSON response")?;
+        let json: Value = serde_json::from_str(content).context("Failed to parse JSON response")?;
 
         let mut ips = Vec::new();
 
@@ -281,9 +283,9 @@ impl Fetcher {
 
         for part in parts {
             if let Some(obj) = current.as_object() {
-                current = obj.get(*part).ok_or_else(|| {
-                    anyhow::anyhow!("JSON path '{}' not found", part)
-                })?;
+                current = obj
+                    .get(*part)
+                    .ok_or_else(|| anyhow::anyhow!("JSON path '{}' not found", part))?;
             } else if current.as_array().is_some() {
                 // If we're at an array and there's more path, map over items
                 // This handles cases like prefixes[].ipv4Prefix

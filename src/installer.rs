@@ -232,8 +232,7 @@ pub fn install_with_config(config_path: &Path) -> Result<()> {
     }
 
     // Try to load as v2 config first
-    let config = ConfigV2::load(config_path)
-        .context("Failed to parse config file")?;
+    let config = ConfigV2::load(config_path).context("Failed to parse config file")?;
 
     // Check if already installed
     if Path::new(CONFIG_FILE).exists() {
@@ -451,7 +450,8 @@ alerts:
 
 /// Generate config.yaml content from ConfigV2 with comments
 fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
-    let mut yaml = r#"# =============================================================================
+    let mut yaml =
+        r#"# =============================================================================
 # OustIP Configuration
 # https://github.com/jmchantrein/oustip
 #
@@ -467,7 +467,7 @@ fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
 # =============================================================================
 
 "#
-    .to_string();
+        .to_string();
 
     yaml.push_str(&format!("language: {}\n", config.language));
     yaml.push_str(&format!(
@@ -486,12 +486,16 @@ fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
         }
     ));
     yaml.push_str(&format!("update_interval: {}\n", config.update_interval));
-    yaml.push_str("\n");
+    yaml.push('\n');
 
-    yaml.push_str("# =============================================================================\n");
+    yaml.push_str(
+        "# =============================================================================\n",
+    );
     yaml.push_str("# INTERFACES (auto-detected)\n");
     yaml.push_str("# Run 'oustip interfaces detect' to see detection details\n");
-    yaml.push_str("# =============================================================================\n\n");
+    yaml.push_str(
+        "# =============================================================================\n\n",
+    );
 
     yaml.push_str("interfaces:\n");
     for (name, iface_config) in &config.interfaces {
@@ -512,7 +516,10 @@ fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
         }
         if let Some(ref monitor) = iface_config.outbound_monitor {
             yaml.push_str("    outbound_monitor:\n");
-            yaml.push_str(&format!("      blocklist_preset: {}\n", monitor.blocklist_preset));
+            yaml.push_str(&format!(
+                "      blocklist_preset: {}\n",
+                monitor.blocklist_preset
+            ));
             yaml.push_str(&format!(
                 "      action: {}\n",
                 match monitor.action {
@@ -524,7 +531,7 @@ fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
         }
     }
 
-    yaml.push_str("\n");
+    yaml.push('\n');
     yaml.push_str("# IPv6 configuration\n");
     yaml.push_str("ipv6:\n");
     yaml.push_str(&format!(
@@ -536,7 +543,7 @@ fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
         }
     ));
 
-    yaml.push_str("\n");
+    yaml.push('\n');
     yaml.push_str("# Alerts configuration (disabled by default)\n");
     yaml.push_str("alerts:\n");
     yaml.push_str("  gotify:\n");

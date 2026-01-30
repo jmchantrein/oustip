@@ -179,14 +179,22 @@ async fn test_concurrent_operations() {
 /// Test that YAML parsing handles malformed input
 #[test]
 fn test_yaml_malformed_input() {
-    // Invalid YAML should fail gracefully
+    use serde::Deserialize;
+    use std::collections::HashMap;
+
+    // Invalid YAML should fail gracefully - use String as target type
     let invalid_yaml = "{{{{not valid yaml";
-    let result: Result<serde_yml::Value, _> = serde_yml::from_str(invalid_yaml);
+    let result: Result<String, _> = serde_saphyr::from_str(invalid_yaml);
     assert!(result.is_err());
 
-    // Deeply nested YAML
+    // Deeply nested YAML - use nested struct to test deep parsing
+    #[derive(Deserialize)]
+    struct DeepNested {
+        a: HashMap<String, HashMap<String, HashMap<String, HashMap<String, String>>>>,
+    }
+
     let deep_yaml = "a:\n  b:\n    c:\n      d:\n        e: value";
-    let result: Result<serde_yml::Value, _> = serde_yml::from_str(deep_yaml);
+    let result: Result<DeepNested, _> = serde_saphyr::from_str(deep_yaml);
     assert!(result.is_ok());
 }
 

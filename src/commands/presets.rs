@@ -8,10 +8,15 @@ use crate::presets::PresetsConfig;
 /// Run presets command
 pub async fn run(action: PresetsAction, lang: Option<&str>) -> Result<()> {
     match action {
-        PresetsAction::List { blocklist, allowlist } => list(blocklist, allowlist, lang).await,
-        PresetsAction::Show { name, blocklist, allowlist } => {
-            show(&name, blocklist, allowlist, lang).await
-        }
+        PresetsAction::List {
+            blocklist,
+            allowlist,
+        } => list(blocklist, allowlist, lang).await,
+        PresetsAction::Show {
+            name,
+            blocklist,
+            allowlist,
+        } => show(&name, blocklist, allowlist, lang).await,
     }
 }
 
@@ -114,12 +119,20 @@ async fn show(name: &str, blocklist: bool, allowlist: bool, lang: Option<&str>) 
                 if let Some(source) = presets.allowlist_sources.get(source_name) {
                     println!("  - {}", source_name);
                     match source {
-                        crate::presets::AllowlistSourceDef::Static { ranges, description } => {
+                        crate::presets::AllowlistSourceDef::Static {
+                            ranges,
+                            description,
+                        } => {
                             println!("    Type: static");
                             println!("    Ranges: {}", ranges.join(", "));
                             println!("    {}", description.get(lang));
                         }
-                        crate::presets::AllowlistSourceDef::Dynamic { url, json_path, description, .. } => {
+                        crate::presets::AllowlistSourceDef::Dynamic {
+                            url,
+                            json_path,
+                            description,
+                            ..
+                        } => {
                             println!("    Type: dynamic");
                             println!("    URL: {}", url);
                             if let Some(path) = json_path {
@@ -137,7 +150,10 @@ async fn show(name: &str, blocklist: bool, allowlist: bool, lang: Option<&str>) 
     }
 
     if !show_blocklist && !show_allowlist {
-        anyhow::bail!("Preset '{}' not found in blocklist or allowlist presets", name);
+        anyhow::bail!(
+            "Preset '{}' not found in blocklist or allowlist presets",
+            name
+        );
     }
 
     Ok(())

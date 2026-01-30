@@ -46,7 +46,10 @@ impl std::str::FromStr for InterfaceMode {
             "wan" => Ok(InterfaceMode::Wan),
             "lan" => Ok(InterfaceMode::Lan),
             "trusted" => Ok(InterfaceMode::Trusted),
-            _ => anyhow::bail!("Invalid interface mode: {}. Valid values: wan, lan, trusted", s),
+            _ => anyhow::bail!(
+                "Invalid interface mode: {}. Valid values: wan, lan, trusted",
+                s
+            ),
         }
     }
 }
@@ -140,7 +143,10 @@ pub fn detect_interfaces() -> Result<Vec<DetectedInterface>> {
 
         let iface_type = detect_interface_type(&name);
         let addresses = interface_addresses.get(&name).cloned().unwrap_or_default();
-        let is_default = default_route_iface.as_ref().map(|d| d == &name).unwrap_or(false);
+        let is_default = default_route_iface
+            .as_ref()
+            .map(|d| d == &name)
+            .unwrap_or(false);
 
         let (suggested_mode, reason) = suggest_mode(&name, iface_type, &addresses, is_default);
 
@@ -182,7 +188,11 @@ fn detect_interface_type(name: &str) -> InterfaceType {
     }
 
     // Incus/LXD interfaces
-    if name == "incusbr0" || name == "lxdbr0" || name.starts_with("incus") || name.starts_with("lxd") {
+    if name == "incusbr0"
+        || name == "lxdbr0"
+        || name.starts_with("incus")
+        || name.starts_with("lxd")
+    {
         return InterfaceType::Incus;
     }
 
@@ -244,29 +254,50 @@ fn suggest_mode(
     // Container/VPN interfaces are trusted
     match iface_type {
         InterfaceType::Docker => {
-            return (InterfaceMode::Trusted, "Docker bridge - traffic managed by Docker".to_string());
+            return (
+                InterfaceMode::Trusted,
+                "Docker bridge - traffic managed by Docker".to_string(),
+            );
         }
         InterfaceType::Incus => {
-            return (InterfaceMode::Trusted, "Incus/LXD bridge - traffic managed by Incus".to_string());
+            return (
+                InterfaceMode::Trusted,
+                "Incus/LXD bridge - traffic managed by Incus".to_string(),
+            );
         }
         InterfaceType::Libvirt => {
-            return (InterfaceMode::Trusted, "Libvirt bridge - traffic managed by libvirt".to_string());
+            return (
+                InterfaceMode::Trusted,
+                "Libvirt bridge - traffic managed by libvirt".to_string(),
+            );
         }
         InterfaceType::WireGuard => {
-            return (InterfaceMode::Trusted, "WireGuard VPN - already filtered at endpoint".to_string());
+            return (
+                InterfaceMode::Trusted,
+                "WireGuard VPN - already filtered at endpoint".to_string(),
+            );
         }
         InterfaceType::TunTap => {
-            return (InterfaceMode::Trusted, "VPN tunnel - already filtered at endpoint".to_string());
+            return (
+                InterfaceMode::Trusted,
+                "VPN tunnel - already filtered at endpoint".to_string(),
+            );
         }
         InterfaceType::Veth => {
-            return (InterfaceMode::Trusted, "Container veth - traffic managed by container runtime".to_string());
+            return (
+                InterfaceMode::Trusted,
+                "Container veth - traffic managed by container runtime".to_string(),
+            );
         }
         _ => {}
     }
 
     // Default route = likely WAN
     if is_default_route {
-        return (InterfaceMode::Wan, format!("Default route interface (gateway via {})", name));
+        return (
+            InterfaceMode::Wan,
+            format!("Default route interface (gateway via {})", name),
+        );
     }
 
     // Check if addresses are RFC1918 (private)
@@ -274,14 +305,20 @@ fn suggest_mode(
 
     if has_private_ip {
         let private_addr = addresses.iter().find(|a| is_private_ip(a)).unwrap();
-        return (InterfaceMode::Lan, format!("Has private IP: {}", private_addr));
+        return (
+            InterfaceMode::Lan,
+            format!("Has private IP: {}", private_addr),
+        );
     }
 
     // No addresses or public IPs without default route - assume LAN
     if addresses.is_empty() {
         (InterfaceMode::Lan, "No IP address assigned".to_string())
     } else {
-        (InterfaceMode::Lan, format!("Has IP: {}", addresses.first().unwrap()))
+        (
+            InterfaceMode::Lan,
+            format!("Has IP: {}", addresses.first().unwrap()),
+        )
     }
 }
 
@@ -365,10 +402,7 @@ fn get_interface_addresses() -> Result<HashMap<String, Vec<String>>> {
     let mut addresses: HashMap<String, Vec<String>> = HashMap::new();
 
     // Try parsing /proc/net/fib_trie or use ip command
-    if let Ok(output) = Command::new("ip")
-        .args(["-4", "addr", "show"])
-        .output()
-    {
+    if let Ok(output) = Command::new("ip").args(["-4", "addr", "show"]).output() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut current_iface: Option<String> = None;
 
@@ -440,8 +474,12 @@ pub fn format_detection_report(interfaces: &[DetectedInterface], lang: &str) -> 
         "{:<15} {:<12} {:<10} {}\n",
         header_iface, header_type, header_mode, header_reason
     ));
-    output.push_str(&format!("{:<15} {:<12} {:<10} {}\n",
-        "-".repeat(15), "-".repeat(12), "-".repeat(10), "-".repeat(40)
+    output.push_str(&format!(
+        "{:<15} {:<12} {:<10} {}\n",
+        "-".repeat(15),
+        "-".repeat(12),
+        "-".repeat(10),
+        "-".repeat(40)
     ));
 
     for iface in interfaces {
@@ -464,7 +502,7 @@ pub fn generate_config_snippet(interfaces: &[DetectedInterface]) -> String {
     output.push_str("interfaces:\n");
 
     for iface in interfaces {
-        output.push_str(&format!("  # [AUTO-DETECTED]\n"));
+        output.push_str("  # [AUTO-DETECTED]\n");
         output.push_str(&format!("  # {}\n", iface.reason));
         output.push_str(&format!("  {}:\n", iface.name));
         output.push_str(&format!("    mode: {}\n", iface.suggested_mode.as_str()));
@@ -499,7 +537,10 @@ mod tests {
     fn test_interface_mode_parsing() {
         assert_eq!("wan".parse::<InterfaceMode>().unwrap(), InterfaceMode::Wan);
         assert_eq!("LAN".parse::<InterfaceMode>().unwrap(), InterfaceMode::Lan);
-        assert_eq!("Trusted".parse::<InterfaceMode>().unwrap(), InterfaceMode::Trusted);
+        assert_eq!(
+            "Trusted".parse::<InterfaceMode>().unwrap(),
+            InterfaceMode::Trusted
+        );
         assert!("invalid".parse::<InterfaceMode>().is_err());
     }
 
@@ -552,13 +593,23 @@ mod tests {
 
     #[test]
     fn test_suggest_mode_default_route() {
-        let (mode, _) = suggest_mode("eth0", InterfaceType::Ethernet, &["192.168.1.1/24".to_string()], true);
+        let (mode, _) = suggest_mode(
+            "eth0",
+            InterfaceType::Ethernet,
+            &["192.168.1.1/24".to_string()],
+            true,
+        );
         assert_eq!(mode, InterfaceMode::Wan);
     }
 
     #[test]
     fn test_suggest_mode_private_ip() {
-        let (mode, _) = suggest_mode("eth1", InterfaceType::Ethernet, &["10.0.0.1/24".to_string()], false);
+        let (mode, _) = suggest_mode(
+            "eth1",
+            InterfaceType::Ethernet,
+            &["10.0.0.1/24".to_string()],
+            false,
+        );
         assert_eq!(mode, InterfaceMode::Lan);
     }
 }

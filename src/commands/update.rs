@@ -149,10 +149,16 @@ async fn run_update_lists(dry_run: bool, config_path: &Path) -> Result<()> {
 
     // Fetch auto-allowlists
     let auto_allowlist = fetcher.fetch_auto_allowlist(&config.auto_allowlist).await?;
-    info!("Auto-allowlist: {} IPs from CDN providers", auto_allowlist.len());
+    info!(
+        "Auto-allowlist: {} IPs from CDN providers",
+        auto_allowlist.len()
+    );
 
     println!();
-    println!("[OK] Lists downloaded: {} success, {} errors", success_count, error_count);
+    println!(
+        "[OK] Lists downloaded: {} success, {} errors",
+        success_count, error_count
+    );
     println!();
     println!("To apply firewall rules, run: oustip update config");
 

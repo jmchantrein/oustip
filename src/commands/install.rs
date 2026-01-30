@@ -4,10 +4,10 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
+use crate::config::ConfigV2;
 use crate::enforcer::check_root;
 use crate::installer;
 use crate::interfaces::detect_interfaces;
-use crate::config::ConfigV2;
 
 /// Run the install command
 pub async fn run(
@@ -42,7 +42,10 @@ pub async fn run(
         // In a full implementation, this would prompt for user confirmation
         println!("\nDetected interfaces:");
         for iface in &interfaces {
-            println!("  {} -> {} ({})", iface.name, iface.suggested_mode, iface.reason);
+            println!(
+                "  {} -> {} ({})",
+                iface.name, iface.suggested_mode, iface.reason
+            );
         }
         println!();
 
