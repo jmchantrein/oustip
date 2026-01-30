@@ -5,9 +5,9 @@ use std::path::Path;
 
 use crate::config::Config;
 use crate::enforcer::{create_backend, get_backend_display_name};
-use crate::fetcher::format_count;
 use crate::installer::is_installed;
 use crate::stats::OustipState;
+use crate::utils::format_count;
 
 /// Run the status command
 pub async fn run(config_path: &Path) -> Result<()> {

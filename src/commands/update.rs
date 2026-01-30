@@ -10,10 +10,11 @@ use crate::alerts::{AlertManager, AlertTypes};
 use crate::config::Config;
 use crate::dns::resolve_ptr;
 use crate::enforcer::{check_root, create_backend};
-use crate::fetcher::{format_count, Fetcher};
+use crate::fetcher::Fetcher;
 use crate::lock::LockGuard;
 use crate::signal::is_shutdown_requested;
 use crate::stats::OustipState;
+use crate::utils::format_count;
 
 /// Default failure threshold percentage (50%)
 const DEFAULT_FAILURE_THRESHOLD: f64 = 0.5;

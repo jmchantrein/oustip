@@ -11,6 +11,7 @@ use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use crate::config::{AutoAllowlist, BlocklistSource};
+use crate::utils::format_count;
 
 const TIMEOUT_SECS: u64 = 30;
 const MAX_RETRIES: u32 = 3;
@@ -385,17 +386,6 @@ fn parse_simple_list(content: &str) -> Vec<IpNet> {
         .collect()
 }
 
-/// Format a count with K/M suffix
-pub fn format_count(count: usize) -> String {
-    if count >= 1_000_000 {
-        format!("{:.1}M", count as f64 / 1_000_000.0)
-    } else if count >= 1_000 {
-        format!("{:.1}K", count as f64 / 1_000.0)
-    } else {
-        count.to_string()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,13 +415,6 @@ mod tests {
     }
 
     #[test]
-    fn test_format_count() {
-        assert_eq!(format_count(500), "500");
-        assert_eq!(format_count(1500), "1.5K");
-        assert_eq!(format_count(1_500_000), "1.5M");
-    }
-
-    #[test]
     fn test_parse_blocklist_empty() {
         let content = "";
         let ips = parse_blocklist(content);
@@ -458,15 +441,6 @@ mod tests {
         let content = "  192.168.1.1  \n  10.0.0.0/8  \n\t172.16.0.0/12\t\n";
         let ips = parse_blocklist(content);
         assert_eq!(ips.len(), 3);
-    }
-
-    #[test]
-    fn test_format_count_boundaries() {
-        assert_eq!(format_count(0), "0");
-        assert_eq!(format_count(999), "999");
-        assert_eq!(format_count(1000), "1.0K");
-        assert_eq!(format_count(999_999), "1000.0K");
-        assert_eq!(format_count(1_000_000), "1.0M");
     }
 }
 

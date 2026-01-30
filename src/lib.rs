@@ -106,6 +106,7 @@
 //! - [`signal`] - Graceful shutdown signal handling
 //! - [`stats`] - State persistence and statistics
 //! - [`utils`] - Common utility functions (formatting, truncation)
+//! - [`validation`] - Centralized validation (IP, CIDR, intervals, presets)
 
 pub mod aggregator;
 pub mod alerts;
@@ -120,6 +121,7 @@ pub mod lock;
 pub mod signal;
 pub mod stats;
 pub mod utils;
+pub mod validation;
 
 pub use cli::{AllowlistAction, Cli, Commands, Ipv6Action};
 pub use config::Config;

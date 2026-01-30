@@ -10,9 +10,8 @@ use std::path::Path;
 use crate::alerts::AlertManager;
 use crate::config::Config;
 use crate::enforcer::create_backend;
-use crate::fetcher::format_count;
 use crate::stats::OustipState;
-use crate::utils::{format_bytes, truncate};
+use crate::utils::{format_bytes, format_count, truncate};
 
 /// Report output format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -8,73 +8,13 @@ use std::process::Command;
 use tracing::info;
 
 use crate::config::Config;
+use crate::validation::{validate_interval, validate_preset};
 
 const CONFIG_DIR: &str = "/etc/oustip";
 const CONFIG_FILE: &str = "/etc/oustip/config.yaml";
 const STATE_DIR: &str = "/var/lib/oustip";
 const SYSTEMD_SERVICE: &str = "/etc/systemd/system/oustip.service";
 const SYSTEMD_TIMER: &str = "/etc/systemd/system/oustip.timer";
-
-/// Valid preset values (must match config.rs)
-const VALID_PRESETS: &[&str] = &["minimal", "recommended", "full", "paranoid"];
-
-/// Validate preset value to prevent injection
-fn validate_preset(preset: &str) -> Result<()> {
-    if !VALID_PRESETS.contains(&preset) {
-        anyhow::bail!(
-            "Invalid preset '{}'. Valid values: {}",
-            preset,
-            VALID_PRESETS.join(", ")
-        );
-    }
-    Ok(())
-}
-
-/// Validate timer interval format to prevent injection
-/// Accepts formats like: 30s, 5m, 4h, 1d
-/// Requires ASCII-only input to prevent Unicode-related edge cases
-fn validate_interval(interval: &str) -> Result<()> {
-    if interval.is_empty() {
-        anyhow::bail!("Timer interval cannot be empty");
-    }
-
-    // Reject non-ASCII to prevent Unicode edge cases
-    if !interval.is_ascii() {
-        anyhow::bail!(
-            "Invalid timer interval '{}'. Only ASCII characters allowed",
-            interval
-        );
-    }
-
-    if interval.len() < 2 {
-        anyhow::bail!(
-            "Invalid timer interval '{}'. Use format like '4h', '30m', '1d'",
-            interval
-        );
-    }
-
-    // Safe to use chars() since we verified ASCII-only
-    let suffix = interval.chars().last().unwrap();
-    let num_part = &interval[..interval.len() - 1];
-
-    // Validate suffix
-    if !matches!(suffix, 's' | 'm' | 'h' | 'd') {
-        anyhow::bail!(
-            "Invalid timer interval '{}'. Suffix must be s, m, h, or d",
-            interval
-        );
-    }
-
-    // Validate number part
-    if num_part.parse::<u32>().is_err() {
-        anyhow::bail!(
-            "Invalid timer interval '{}'. Number part must be a positive integer",
-            interval
-        );
-    }
-
-    Ok(())
-}
 
 /// Install OustIP
 pub fn install(preset: Option<&str>) -> Result<()> {
@@ -441,15 +381,6 @@ mod tests {
         assert!(validate_interval("4h; rm -rf /").is_err());
         assert!(validate_interval("$(whoami)h").is_err());
         assert!(validate_interval("4h\nExec=malicious").is_err());
-    }
-
-    #[test]
-    fn test_valid_presets_constant() {
-        assert!(VALID_PRESETS.contains(&"minimal"));
-        assert!(VALID_PRESETS.contains(&"recommended"));
-        assert!(VALID_PRESETS.contains(&"full"));
-        assert!(VALID_PRESETS.contains(&"paranoid"));
-        assert_eq!(VALID_PRESETS.len(), 4);
     }
 
     #[test]
