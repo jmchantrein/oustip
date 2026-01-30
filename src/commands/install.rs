@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
-use crate::config::ConfigV2;
+use crate::config::Config;
 use crate::enforcer::check_root;
 use crate::installer;
 use crate::interfaces::detect_interfaces;
@@ -34,7 +34,7 @@ pub async fn run(
     if headless {
         // Headless mode: auto-generate config from detected interfaces
         info!("Headless mode: generating config from detected interfaces");
-        let config = ConfigV2::from_detected_interfaces(&interfaces);
+        let config = Config::from_detected_interfaces(&interfaces);
         installer::install_v2(preset.as_deref(), Some(config))?;
     } else {
         // Interactive mode: show detected interfaces and proceed
@@ -49,7 +49,7 @@ pub async fn run(
         }
         println!();
 
-        let config = ConfigV2::from_detected_interfaces(&interfaces);
+        let config = Config::from_detected_interfaces(&interfaces);
         installer::install_v2(preset.as_deref(), Some(config))?;
     }
 

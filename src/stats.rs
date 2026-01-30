@@ -491,20 +491,22 @@ mod tests {
 
     #[test]
     fn test_state_serialization_roundtrip() {
-        let mut state = OustipState::default();
-        state.last_update = Some(Utc::now());
-        state.total_entries = 1000;
-        state.total_ips = 50000;
-        state.last_known_total_ips = Some(49000);
-        state.last_preset = Some("recommended".to_string());
+        let mut state = OustipState {
+            last_update: Some(Utc::now()),
+            total_entries: 1000,
+            total_ips: 50000,
+            last_known_total_ips: Some(49000),
+            last_preset: Some("recommended".to_string()),
+            sources: vec![SourceStats {
+                name: "test_source".to_string(),
+                raw_count: 100,
+                ip_count: 5000,
+                ips: vec!["192.168.1.0/24".to_string()],
+            }],
+            ..Default::default()
+        };
 
         state.add_assumed_ip("8.8.8.8");
-        state.sources.push(SourceStats {
-            name: "test_source".to_string(),
-            raw_count: 100,
-            ip_count: 5000,
-            ips: vec!["192.168.1.0/24".to_string()],
-        });
 
         // Serialize
         let json = serde_json::to_string(&state).unwrap();

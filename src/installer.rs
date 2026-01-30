@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::Command;
 use tracing::info;
 
-use crate::config::{Config, ConfigV2};
+use crate::config::Config;
 use crate::presets::PresetsConfig;
 use crate::validation::{validate_interval, validate_preset};
 
@@ -117,7 +117,7 @@ pub fn install(preset: Option<&str>) -> Result<()> {
 /// - Per-interface blocklist/allowlist configuration
 /// - Automatic interface detection
 /// - Separate presets.yaml for source management
-pub fn install_v2(preset: Option<&str>, config: Option<ConfigV2>) -> Result<()> {
+pub fn install_v2(preset: Option<&str>, config: Option<Config>) -> Result<()> {
     // Validate preset if provided (prevents injection attacks)
     if let Some(p) = preset {
         validate_preset(p)?;
@@ -160,7 +160,7 @@ pub fn install_v2(preset: Option<&str>, config: Option<ConfigV2>) -> Result<()> 
         .context("Failed to set config permissions")?;
 
     // Load the config to get the update_interval
-    let config = ConfigV2::load(CONFIG_FILE)?;
+    let config = Config::load(CONFIG_FILE)?;
     let update_interval = &config.update_interval;
 
     // Create systemd service
@@ -232,7 +232,7 @@ pub fn install_with_config(config_path: &Path) -> Result<()> {
     }
 
     // Try to load as v2 config first
-    let config = ConfigV2::load(config_path).context("Failed to parse config file")?;
+    let config = Config::load(config_path).context("Failed to parse config file")?;
 
     // Check if already installed
     if Path::new(CONFIG_FILE).exists() {
@@ -448,8 +448,8 @@ alerts:
     .to_string()
 }
 
-/// Generate config.yaml content from ConfigV2 with comments
-fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
+/// Generate config.yaml content from Config with comments
+fn generate_config_yaml_v2(config: &Config, default_preset: &str) -> String {
     let mut yaml =
         r#"# =============================================================================
 # OustIP Configuration
@@ -498,36 +498,38 @@ fn generate_config_yaml_v2(config: &ConfigV2, default_preset: &str) -> String {
     );
 
     yaml.push_str("interfaces:\n");
-    for (name, iface_config) in &config.interfaces {
-        yaml.push_str(&format!("  {}:\n", name));
-        yaml.push_str(&format!(
-            "    mode: {}\n",
-            match iface_config.mode {
-                crate::config::InterfaceMode::Wan => "wan",
-                crate::config::InterfaceMode::Lan => "lan",
-                crate::config::InterfaceMode::Trusted => "trusted",
-            }
-        ));
-        if let Some(ref preset) = iface_config.blocklist_preset {
-            yaml.push_str(&format!("    blocklist_preset: {}\n", preset));
-        }
-        if let Some(ref preset) = iface_config.allowlist_preset {
-            yaml.push_str(&format!("    allowlist_preset: {}\n", preset));
-        }
-        if let Some(ref monitor) = iface_config.outbound_monitor {
-            yaml.push_str("    outbound_monitor:\n");
+    if let Some(ref interfaces) = config.interfaces {
+        for (name, iface_config) in interfaces {
+            yaml.push_str(&format!("  {}:\n", name));
             yaml.push_str(&format!(
-                "      blocklist_preset: {}\n",
-                monitor.blocklist_preset
-            ));
-            yaml.push_str(&format!(
-                "      action: {}\n",
-                match monitor.action {
-                    crate::config::OutboundAction::Alert => "alert",
-                    crate::config::OutboundAction::Block => "block",
-                    crate::config::OutboundAction::BlockAndAlert => "block_and_alert",
+                "    mode: {}\n",
+                match iface_config.mode {
+                    crate::config::InterfaceMode::Wan => "wan",
+                    crate::config::InterfaceMode::Lan => "lan",
+                    crate::config::InterfaceMode::Trusted => "trusted",
                 }
             ));
+            if let Some(ref preset) = iface_config.blocklist_preset {
+                yaml.push_str(&format!("    blocklist_preset: {}\n", preset));
+            }
+            if let Some(ref preset) = iface_config.allowlist_preset {
+                yaml.push_str(&format!("    allowlist_preset: {}\n", preset));
+            }
+            if let Some(ref monitor) = iface_config.outbound_monitor {
+                yaml.push_str("    outbound_monitor:\n");
+                yaml.push_str(&format!(
+                    "      blocklist_preset: {}\n",
+                    monitor.blocklist_preset
+                ));
+                yaml.push_str(&format!(
+                    "      action: {}\n",
+                    match monitor.action {
+                        crate::config::OutboundAction::Alert => "alert",
+                        crate::config::OutboundAction::Block => "block",
+                        crate::config::OutboundAction::BlockAndAlert => "block_and_alert",
+                    }
+                ));
+            }
         }
     }
 

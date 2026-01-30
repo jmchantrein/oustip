@@ -883,49 +883,6 @@ impl InterfaceConfig {
     }
 }
 
-// =============================================================================
-// DEPRECATED: ConfigV2 (use Config with interfaces field instead)
-// =============================================================================
-
-/// New configuration structure with interface-based filtering (v2)
-///
-/// DEPRECATED: Use `Config` with the `interfaces` field instead.
-/// This struct is kept for backward compatibility but will be removed in a future version.
-/// The `Config` struct now supports both legacy mode (blocklists/allowlist fields) and
-/// interface-based mode (when `interfaces` is Some).
-#[deprecated(
-    since = "0.2.0",
-    note = "Use Config with interfaces field instead. Config now supports both legacy and interface-based modes."
-)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ConfigV2 {
-    /// Language for messages (en, fr)
-    pub language: String,
-
-    /// Firewall backend (auto, iptables, nftables)
-    pub backend: Backend,
-
-    /// Filtering mode (raw, conntrack)
-    pub mode: FilterMode,
-
-    /// Per-interface configuration
-    pub interfaces: HashMap<String, InterfaceConfig>,
-
-    /// Raw nftables/iptables rules for advanced users
-    #[serde(default)]
-    pub raw_rules: Option<RawRulesConfig>,
-
-    /// Alert destinations
-    pub alerts: AlertsConfig,
-
-    /// Update interval for systemd timer
-    pub update_interval: String,
-
-    /// IPv6 configuration
-    pub ipv6: Ipv6Config,
-}
-
 /// Raw firewall rules for advanced users
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -936,240 +893,6 @@ pub struct RawRulesConfig {
     /// Raw iptables rules
     #[serde(default)]
     pub iptables: Option<String>,
-}
-
-impl Default for ConfigV2 {
-    fn default() -> Self {
-        Self {
-            language: "en".to_string(),
-            backend: Backend::Auto,
-            mode: FilterMode::Conntrack,
-            interfaces: HashMap::new(),
-            raw_rules: None,
-            alerts: AlertsConfig::default(),
-            update_interval: "4h".to_string(),
-            ipv6: Ipv6Config::default(),
-        }
-    }
-}
-
-impl ConfigV2 {
-    /// Load configuration from YAML file
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let content = std::fs::read_to_string(path.as_ref())
-            .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
-        let config: ConfigV2 = serde_saphyr::from_str(&content)
-            .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
-
-        config.validate()?;
-        Ok(config)
-    }
-
-    /// Load configuration and validate preset references against presets.yaml
-    pub fn load_and_validate_presets<P: AsRef<Path>>(
-        config_path: P,
-        presets: &crate::presets::PresetsConfig,
-    ) -> Result<Self> {
-        let config = Self::load(config_path)?;
-        config.validate_preset_references(presets)?;
-        Ok(config)
-    }
-
-    /// Validate configuration
-    pub fn validate(&self) -> Result<()> {
-        // Validate update interval
-        if !is_valid_interval(&self.update_interval) {
-            anyhow::bail!(
-                "Invalid update_interval '{}'. Use format like '4h', '30m', '1d'",
-                self.update_interval
-            );
-        }
-
-        // Validate interface configurations
-        for (name, iface_config) in &self.interfaces {
-            // Loopback cannot be configured (it's always trusted)
-            if name == "lo" {
-                anyhow::bail!("Interface 'lo' cannot be configured - it is always trusted");
-            }
-
-            // WAN mode requires blocklist_preset
-            if iface_config.mode == InterfaceMode::Wan && iface_config.blocklist_preset.is_none() {
-                anyhow::bail!(
-                    "Interface '{}' is in WAN mode but has no blocklist_preset",
-                    name
-                );
-            }
-
-            // LAN mode should have outbound_monitor for detection
-            if iface_config.mode == InterfaceMode::Lan && iface_config.outbound_monitor.is_none() {
-                tracing::warn!(
-                    "Interface '{}' is in LAN mode without outbound_monitor - no compromise detection",
-                    name
-                );
-            }
-
-            // Basic preset name validation (format only)
-            // Full validation against presets.yaml is done in validate_preset_references
-            if let Some(ref preset) = iface_config.blocklist_preset {
-                if preset.is_empty()
-                    || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                {
-                    anyhow::bail!(
-                        "Invalid blocklist_preset name '{}' for interface '{}'. Use alphanumeric, underscore or hyphen only.",
-                        preset,
-                        name
-                    );
-                }
-            }
-            if let Some(ref preset) = iface_config.allowlist_preset {
-                if preset.is_empty()
-                    || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                {
-                    anyhow::bail!(
-                        "Invalid allowlist_preset name '{}' for interface '{}'. Use alphanumeric, underscore or hyphen only.",
-                        preset,
-                        name
-                    );
-                }
-            }
-        }
-
-        // Validate webhook URL uses HTTPS if enabled
-        if self.alerts.webhook.enabled
-            && !self.alerts.webhook.url.is_empty()
-            && !self.alerts.webhook.url.starts_with("https://")
-        {
-            anyhow::bail!("Webhook URL must use HTTPS: {}", self.alerts.webhook.url);
-        }
-
-        // Validate Gotify URL uses HTTPS if enabled
-        if self.alerts.gotify.enabled
-            && !self.alerts.gotify.url.is_empty()
-            && !self.alerts.gotify.url.starts_with("https://")
-        {
-            anyhow::bail!("Gotify URL must use HTTPS: {}", self.alerts.gotify.url);
-        }
-
-        Ok(())
-    }
-
-    /// Validate that preset references in config.yaml exist in presets.yaml
-    ///
-    /// This validates:
-    /// - blocklist_preset names reference existing blocklist presets
-    /// - allowlist_preset names reference existing allowlist presets
-    /// - outbound_monitor.blocklist_preset names reference existing blocklist presets
-    pub fn validate_preset_references(
-        &self,
-        presets: &crate::presets::PresetsConfig,
-    ) -> Result<()> {
-        let blocklist_presets = presets.list_blocklist_presets();
-        let allowlist_presets = presets.list_allowlist_presets();
-
-        for (iface_name, iface_config) in &self.interfaces {
-            // Validate blocklist_preset
-            if let Some(ref preset) = iface_config.blocklist_preset {
-                if !blocklist_presets.iter().any(|p| p.as_str() == preset) {
-                    let available: Vec<&str> =
-                        blocklist_presets.iter().map(|s| s.as_str()).collect();
-                    anyhow::bail!(
-                        "Interface '{}': blocklist_preset '{}' not found in presets.yaml.\n\
-                         Available blocklist presets: {}",
-                        iface_name,
-                        preset,
-                        available.join(", ")
-                    );
-                }
-            }
-
-            // Validate allowlist_preset
-            if let Some(ref preset) = iface_config.allowlist_preset {
-                if !allowlist_presets.iter().any(|p| p.as_str() == preset) {
-                    let available: Vec<&str> =
-                        allowlist_presets.iter().map(|s| s.as_str()).collect();
-                    anyhow::bail!(
-                        "Interface '{}': allowlist_preset '{}' not found in presets.yaml.\n\
-                         Available allowlist presets: {}",
-                        iface_name,
-                        preset,
-                        available.join(", ")
-                    );
-                }
-            }
-
-            // Validate outbound_monitor.blocklist_preset
-            if let Some(ref monitor) = iface_config.outbound_monitor {
-                if !blocklist_presets
-                    .iter()
-                    .any(|p| p.as_str() == monitor.blocklist_preset)
-                {
-                    let available: Vec<&str> =
-                        blocklist_presets.iter().map(|s| s.as_str()).collect();
-                    anyhow::bail!(
-                        "Interface '{}': outbound_monitor.blocklist_preset '{}' not found in presets.yaml.\n\
-                         Available blocklist presets: {}",
-                        iface_name,
-                        monitor.blocklist_preset,
-                        available.join(", ")
-                    );
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Get all WAN interfaces
-    pub fn get_wan_interfaces(&self) -> Vec<(&String, &InterfaceConfig)> {
-        self.interfaces
-            .iter()
-            .filter(|(_, c)| c.mode == InterfaceMode::Wan)
-            .collect()
-    }
-
-    /// Get all LAN interfaces
-    pub fn get_lan_interfaces(&self) -> Vec<(&String, &InterfaceConfig)> {
-        self.interfaces
-            .iter()
-            .filter(|(_, c)| c.mode == InterfaceMode::Lan)
-            .collect()
-    }
-
-    /// Get all trusted interfaces
-    pub fn get_trusted_interfaces(&self) -> Vec<(&String, &InterfaceConfig)> {
-        self.interfaces
-            .iter()
-            .filter(|(_, c)| c.mode == InterfaceMode::Trusted)
-            .collect()
-    }
-
-    /// Generate config from detected interfaces
-    pub fn from_detected_interfaces(interfaces: &[crate::interfaces::DetectedInterface]) -> Self {
-        let mut config = Self::default();
-
-        for iface in interfaces {
-            let iface_config = match iface.suggested_mode {
-                crate::interfaces::InterfaceMode::Wan => {
-                    InterfaceConfig::wan("paranoid", Some("cdn_common"))
-                }
-                crate::interfaces::InterfaceMode::Lan => {
-                    InterfaceConfig::lan("rfc1918", "recommended", OutboundAction::Alert)
-                }
-                crate::interfaces::InterfaceMode::Trusted => InterfaceConfig::trusted(),
-            };
-
-            config.interfaces.insert(iface.name.clone(), iface_config);
-        }
-
-        config
-    }
-
-    /// Generate YAML configuration with comments
-    pub fn generate_yaml_with_comments(&self) -> Result<String> {
-        // For now, just serialize. In production, we'd use a template
-        let yaml = serde_saphyr::to_string(self)?;
-        Ok(yaml)
-    }
 }
 
 #[cfg(test)]
@@ -1534,8 +1257,10 @@ headers:
 
     #[test]
     fn test_config_is_interface_based_when_interfaces_set() {
-        let mut config = Config::default();
-        config.interfaces = Some(HashMap::new());
+        let config = Config {
+            interfaces: Some(HashMap::new()),
+            ..Default::default()
+        };
         assert!(config.is_interface_based());
     }
 
@@ -1990,10 +1715,12 @@ allowlist:
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("roundtrip.yaml");
 
-        let mut config = Config::default();
-        config.language = "fr".to_string();
-        config.preset = "minimal".to_string();
-        config.allowlist.push("8.8.8.8".to_string());
+        let config = Config {
+            language: "fr".to_string(),
+            preset: "minimal".to_string(),
+            allowlist: vec!["8.8.8.8".to_string()],
+            ..Default::default()
+        };
 
         // Save
         config.save(&config_path).unwrap();
@@ -2018,8 +1745,10 @@ allowlist:
         config.save(&config_path).unwrap();
 
         // Simulate concurrent modification by writing different content
-        let mut config2 = Config::default();
-        config2.language = "de".to_string();
+        let config2 = Config {
+            language: "de".to_string(),
+            ..Default::default()
+        };
 
         // Both saves should succeed (atomic writes)
         config.save(&config_path).unwrap();
