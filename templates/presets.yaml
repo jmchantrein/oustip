@@ -22,6 +22,9 @@
 # =============================================================================
 
 blocklist_sources:
+  # ---------------------------------------------------------------------------
+  # IPv4 Sources / Sources IPv4
+  # ---------------------------------------------------------------------------
   spamhaus_drop:
     url: https://www.spamhaus.org/drop/drop.txt
     description:
@@ -33,6 +36,15 @@ blocklist_sources:
     description:
       en: "Spamhaus EDROP - Extended DROP list"
       fr: "Spamhaus EDROP - Liste DROP étendue"
+
+  # ---------------------------------------------------------------------------
+  # IPv6 Sources / Sources IPv6
+  # ---------------------------------------------------------------------------
+  spamhaus_dropv6:
+    url: https://www.spamhaus.org/drop/dropv6.txt
+    description:
+      en: "Spamhaus DROPv6 - IPv6 hijacked/spam networks"
+      fr: "Spamhaus DROPv6 - Réseaux IPv6 détournés/spam"
 
   dshield:
     url: https://www.dshield.org/block.txt
@@ -77,17 +89,18 @@ blocklist_sources:
 blocklist_presets:
   minimal:
     description:
-      en: "Production servers - near-zero false positives"
-      fr: "Serveurs production - quasi-zéro faux positifs"
+      en: "Production servers - near-zero false positives (IPv4+IPv6)"
+      fr: "Serveurs production - quasi-zéro faux positifs (IPv4+IPv6)"
     sources:
       - spamhaus_drop
       - spamhaus_edrop
+      - spamhaus_dropv6
       - dshield
 
   recommended:
     description:
-      en: "Recommended default - good balance"
-      fr: "Défaut recommandé - bon équilibre"
+      en: "Recommended default - good balance (IPv4+IPv6)"
+      fr: "Défaut recommandé - bon équilibre (IPv4+IPv6)"
     extends: minimal
     sources:
       - firehol_level1
@@ -95,16 +108,16 @@ blocklist_presets:
 
   full:
     description:
-      en: "High security - rare false positives"
-      fr: "Haute sécurité - faux positifs rares"
+      en: "High security - rare false positives (IPv4+IPv6)"
+      fr: "Haute sécurité - faux positifs rares (IPv4+IPv6)"
     extends: recommended
     sources:
       - firehol_level3
 
   paranoid:
     description:
-      en: "Maximum protection - expect false positives"
-      fr: "Protection maximale - faux positifs probables"
+      en: "Maximum protection - expect false positives (IPv4+IPv6)"
+      fr: "Protection maximale - faux positifs probables (IPv4+IPv6)"
     extends: full
     sources:
       - firehol_level4

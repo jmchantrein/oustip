@@ -39,6 +39,14 @@ alerts:
     enabled: false
     url: ""
     headers: {}
+  # Alert when blocklist content changes significantly
+  # Useful for detecting upstream list changes or fetch issues
+  blocklist_change:
+    enabled: false
+    # Percentage threshold for alerting (default: 10%)
+    # Alert is triggered when |new_ips - old_ips| / old_ips > threshold
+    # NOTE: Changing preset will NOT trigger this alert (intentional change)
+    change_threshold_percent: 10.0
 
 # Blocklist sources
 # Format compatible with FireHOL iplists.firehol.org

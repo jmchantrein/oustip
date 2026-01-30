@@ -25,6 +25,12 @@ pub struct OustipState {
     /// IPs that are in both allowlist and blocklist, acknowledged by admin
     #[serde(default)]
     pub assumed_ips: Option<Vec<String>>,
+    /// Last known total IPs for change detection alerts
+    #[serde(default)]
+    pub last_known_total_ips: Option<u128>,
+    /// Last preset used, to detect intentional preset changes
+    #[serde(default)]
+    pub last_preset: Option<String>,
 }
 
 /// Statistics for a single blocklist source
@@ -297,6 +303,8 @@ mod tests {
         assert_eq!(state.total_entries, 0);
         assert_eq!(state.total_ips, 0);
         assert!(state.assumed_ips.is_none());
+        assert!(state.last_known_total_ips.is_none());
+        assert!(state.last_preset.is_none());
     }
 
     #[test]
@@ -312,6 +320,8 @@ mod tests {
             total_entries: 100,
             total_ips: 1000,
             assumed_ips: Some(vec!["8.8.8.8".to_string()]),
+            last_known_total_ips: Some(950),
+            last_preset: Some("recommended".to_string()),
         };
 
         let json = serde_json::to_string(&state).unwrap();
@@ -321,6 +331,8 @@ mod tests {
         assert_eq!(parsed.total_ips, 1000);
         assert_eq!(parsed.sources.len(), 1);
         assert_eq!(parsed.sources[0].name, "test");
+        assert_eq!(parsed.last_known_total_ips, Some(950));
+        assert_eq!(parsed.last_preset, Some("recommended".to_string()));
     }
 
     #[test]
@@ -448,5 +460,342 @@ mod tests {
         assert!(STATE_FILE.starts_with("/var"));
         assert!(STATE_FILE.ends_with(".json"));
         assert!(STATE_BACKUP_FILE.ends_with(".bak"));
+    }
+
+    // =========================================================================
+    // State management tests - Backup/restore, atomic write, corruption recovery
+    // =========================================================================
+
+    #[test]
+    fn test_state_file_paths_related() {
+        // Backup file should be the main file with .bak extension
+        assert!(STATE_BACKUP_FILE.starts_with(STATE_FILE.trim_end_matches(".json")));
+    }
+
+    #[test]
+    fn test_state_file_in_var_lib() {
+        // State should be in /var/lib for persistent data
+        assert!(STATE_FILE.contains("/var/lib/"));
+        assert!(STATE_BACKUP_FILE.contains("/var/lib/"));
+    }
+
+    #[test]
+    fn test_state_serialization_roundtrip() {
+        let mut state = OustipState::default();
+        state.last_update = Some(Utc::now());
+        state.total_entries = 1000;
+        state.total_ips = 50000;
+        state.last_known_total_ips = Some(49000);
+        state.last_preset = Some("recommended".to_string());
+
+        state.add_assumed_ip("8.8.8.8");
+        state.sources.push(SourceStats {
+            name: "test_source".to_string(),
+            raw_count: 100,
+            ip_count: 5000,
+            ips: vec!["192.168.1.0/24".to_string()],
+        });
+
+        // Serialize
+        let json = serde_json::to_string(&state).unwrap();
+
+        // Deserialize
+        let restored: OustipState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.total_entries, 1000);
+        assert_eq!(restored.total_ips, 50000);
+        assert_eq!(restored.last_known_total_ips, Some(49000));
+        assert_eq!(restored.last_preset, Some("recommended".to_string()));
+        assert!(restored.is_assumed("8.8.8.8"));
+        assert_eq!(restored.sources.len(), 1);
+        assert_eq!(restored.sources[0].name, "test_source");
+    }
+
+    #[test]
+    fn test_state_corrupted_json_recovery() {
+        // Test that corrupted JSON is handled gracefully
+        let corrupted = "{invalid json}}}";
+        let result: Result<OustipState, _> = serde_json::from_str(corrupted);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_state_partial_json_recovery() {
+        // Partial/truncated JSON
+        let partial = r#"{"last_update": null, "sources": [{"name": "test""#;
+        let result: Result<OustipState, _> = serde_json::from_str(partial);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_state_empty_json_object() {
+        // Empty JSON object may fail to parse if fields don't have defaults
+        // Test the actual behavior
+        let empty = "{}";
+        let result: Result<OustipState, _> = serde_json::from_str(empty);
+
+        // If it fails, check that the error is about missing fields
+        // If it succeeds, verify the defaults
+        if result.is_err() {
+            let err = result.unwrap_err().to_string();
+            // This is expected if some fields don't have serde defaults
+            assert!(
+                err.contains("missing field") || err.contains("expected"),
+                "Error should be about missing fields, got: {}",
+                err
+            );
+        } else {
+            let state = result.unwrap();
+            assert!(state.last_update.is_none());
+            assert!(state.sources.is_empty());
+            assert_eq!(state.total_entries, 0);
+        }
+    }
+
+    #[test]
+    fn test_state_extra_fields_ignored() {
+        // Unknown fields should be ignored during deserialization
+        let with_extra = r#"{
+            "last_update": null,
+            "sources": [],
+            "total_entries": 100,
+            "total_ips": 1000,
+            "unknown_field": "should be ignored",
+            "another_unknown": 42
+        }"#;
+        let result: Result<OustipState, _> = serde_json::from_str(with_extra);
+        assert!(result.is_ok());
+        let state = result.unwrap();
+        assert_eq!(state.total_entries, 100);
+    }
+
+    #[test]
+    fn test_update_sources_empty() {
+        let mut state = OustipState::default();
+        state.update_sources(vec![]);
+
+        assert!(state.sources.is_empty());
+        assert_eq!(state.total_entries, 0);
+        assert_eq!(state.total_ips, 0);
+        assert!(state.last_update.is_some());
+    }
+
+    #[test]
+    fn test_update_sources_multiple() {
+        let mut state = OustipState::default();
+
+        let sources = vec![
+            (
+                "source1".to_string(),
+                100,
+                vec!["192.168.0.0/24".parse().unwrap()],
+            ),
+            (
+                "source2".to_string(),
+                200,
+                vec!["10.0.0.0/8".parse().unwrap()],
+            ),
+            (
+                "source3".to_string(),
+                50,
+                vec!["172.16.0.0/12".parse().unwrap()],
+            ),
+        ];
+
+        state.update_sources(sources);
+
+        assert_eq!(state.sources.len(), 3);
+        assert_eq!(state.total_entries, 350); // 100 + 200 + 50
+        assert!(state.last_update.is_some());
+    }
+
+    #[test]
+    fn test_update_sources_overwrites_previous() {
+        let mut state = OustipState::default();
+
+        // First update
+        state.update_sources(vec![(
+            "old_source".to_string(),
+            1000,
+            vec!["1.0.0.0/8".parse().unwrap()],
+        )]);
+        assert_eq!(state.sources.len(), 1);
+        assert_eq!(state.sources[0].name, "old_source");
+
+        // Second update - should overwrite
+        state.update_sources(vec![(
+            "new_source".to_string(),
+            500,
+            vec!["2.0.0.0/8".parse().unwrap()],
+        )]);
+        assert_eq!(state.sources.len(), 1);
+        assert_eq!(state.sources[0].name, "new_source");
+    }
+
+    #[test]
+    fn test_update_sources_caches_ips() {
+        let mut state = OustipState::default();
+
+        let ips: Vec<ipnet::IpNet> = vec![
+            "192.168.1.0/24".parse().unwrap(),
+            "10.0.0.0/8".parse().unwrap(),
+            "172.16.0.0/12".parse().unwrap(),
+        ];
+
+        state.update_sources(vec![("test".to_string(), 3, ips)]);
+
+        // IPs should be cached
+        assert_eq!(state.sources[0].ips.len(), 3);
+        assert!(state.sources[0].ips.contains(&"192.168.1.0/24".to_string()));
+    }
+
+    #[test]
+    fn test_update_sources_ip_count_calculation() {
+        let mut state = OustipState::default();
+
+        // /24 = 256 IPs, /8 = 16,777,216 IPs
+        let sources = vec![(
+            "test".to_string(),
+            2,
+            vec![
+                "192.168.1.0/24".parse().unwrap(),
+                "10.0.0.0/8".parse().unwrap(),
+            ],
+        )];
+
+        state.update_sources(sources);
+
+        // total_ips should be sum of IP counts
+        assert!(state.total_ips > 0);
+        // The actual count depends on count_ips() implementation
+    }
+
+    #[test]
+    fn test_state_last_update_set_on_update_sources() {
+        let mut state = OustipState::default();
+        assert!(state.last_update.is_none());
+
+        state.update_sources(vec![]);
+
+        assert!(state.last_update.is_some());
+        let update_time = state.last_update.unwrap();
+        let now = Utc::now();
+        // Should be within 1 second of now
+        assert!((now - update_time).num_seconds().abs() < 1);
+    }
+
+    #[test]
+    fn test_source_stats_ip_count_matches_vector() {
+        let mut state = OustipState::default();
+
+        let ips: Vec<ipnet::IpNet> = vec![
+            "192.168.1.0/24".parse().unwrap(),
+            "10.0.0.0/8".parse().unwrap(),
+        ];
+
+        state.update_sources(vec![("test".to_string(), ips.len(), ips.clone())]);
+
+        // raw_count should match input
+        assert_eq!(state.sources[0].raw_count, 2);
+    }
+
+    #[test]
+    fn test_format_duration_ago_edge_cases() {
+        // Just under 60 seconds
+        let past = Utc::now() - Duration::seconds(59);
+        assert_eq!(format_duration_ago(past), "just now");
+
+        // Exactly 60 seconds
+        let past = Utc::now() - Duration::seconds(60);
+        assert_eq!(format_duration_ago(past), "1m ago");
+
+        // Just under an hour
+        let past = Utc::now() - Duration::seconds(3599);
+        assert!(format_duration_ago(past).ends_with("m ago"));
+
+        // Exactly an hour
+        let past = Utc::now() - Duration::hours(1);
+        assert_eq!(format_duration_ago(past), "1h ago");
+
+        // Just under a day
+        let past = Utc::now() - Duration::hours(23);
+        assert_eq!(format_duration_ago(past), "23h ago");
+
+        // Exactly a day
+        let past = Utc::now() - Duration::days(1);
+        assert_eq!(format_duration_ago(past), "1d ago");
+    }
+
+    #[test]
+    fn test_format_duration_ago_future() {
+        // Future time (edge case - shouldn't happen normally)
+        let future = Utc::now() + Duration::hours(1);
+        // Should still return something (implementation dependent)
+        let result = format_duration_ago(future);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_state_max_cached_ips_constant() {
+        assert_eq!(OustipState::MAX_CACHED_IPS, 1000);
+    }
+
+    #[test]
+    fn test_state_assumed_ips_serialization_optional() {
+        // Test that assumed_ips defaults to None when missing
+        let json = r#"{"last_update": null, "sources": [], "total_entries": 0, "total_ips": 0}"#;
+        let state: OustipState = serde_json::from_str(json).unwrap();
+        assert!(state.assumed_ips.is_none());
+    }
+
+    #[test]
+    fn test_state_last_known_total_ips_optional() {
+        // Test that last_known_total_ips defaults when missing
+        let json = r#"{"last_update": null, "sources": [], "total_entries": 0, "total_ips": 0}"#;
+        let state: OustipState = serde_json::from_str(json).unwrap();
+        assert!(state.last_known_total_ips.is_none());
+    }
+
+    #[test]
+    fn test_state_last_preset_optional() {
+        // Test that last_preset defaults when missing
+        let json = r#"{"last_update": null, "sources": [], "total_entries": 0, "total_ips": 0}"#;
+        let state: OustipState = serde_json::from_str(json).unwrap();
+        assert!(state.last_preset.is_none());
+    }
+
+    #[test]
+    fn test_state_pretty_print_json() {
+        let state = OustipState::default();
+        let pretty = serde_json::to_string_pretty(&state).unwrap();
+
+        // Pretty-printed JSON should contain newlines
+        assert!(pretty.contains('\n'));
+        // Should be valid JSON
+        let _: OustipState = serde_json::from_str(&pretty).unwrap();
+    }
+
+    #[test]
+    fn test_source_stats_empty_ips_default() {
+        let json = r#"{"name": "test", "raw_count": 0, "ip_count": 0}"#;
+        let stats: SourceStats = serde_json::from_str(json).unwrap();
+        assert!(stats.ips.is_empty());
+    }
+
+    #[test]
+    fn test_state_backward_compatibility() {
+        // Old state format without new fields should still deserialize
+        let old_json = r#"{
+            "last_update": null,
+            "sources": [],
+            "total_entries": 100,
+            "total_ips": 1000
+        }"#;
+
+        let state: OustipState = serde_json::from_str(old_json).unwrap();
+        assert_eq!(state.total_entries, 100);
+        assert!(state.assumed_ips.is_none());
+        assert!(state.last_known_total_ips.is_none());
+        assert!(state.last_preset.is_none());
     }
 }

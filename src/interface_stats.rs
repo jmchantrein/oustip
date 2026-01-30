@@ -428,10 +428,10 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid path"))?;
-    let temp_path = parent.join(format!(
-        ".{}.tmp",
-        path.file_name().unwrap().to_string_lossy()
-    ));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("Path has no filename: {:?}", path))?;
+    let temp_path = parent.join(format!(".{}.tmp", file_name.to_string_lossy()));
 
     let mut file = fs::File::create(&temp_path)
         .with_context(|| format!("Failed to create temp file: {:?}", temp_path))?;

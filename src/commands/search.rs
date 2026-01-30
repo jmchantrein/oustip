@@ -10,14 +10,12 @@ use std::path::Path;
 use crate::config::Config;
 use crate::dns::resolve_ptr;
 use crate::stats::OustipState;
+use crate::validation::validate_ip;
 
 /// Run the search command
 pub async fn run(ip_str: &str, show_dns: bool, config_path: &Path) -> Result<()> {
-    // Parse IP address
-    let ip: IpAddr = ip_str
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid IP address: {}", ip_str))?;
-
+    // Parse IP address using centralized validation
+    let ip = validate_ip(ip_str)?;
     let ip_net = IpNet::from(ip);
 
     // Load config and state
@@ -236,8 +234,9 @@ mod tests {
 
     #[test]
     fn test_ip_parsing() {
-        assert!("192.168.1.1".parse::<IpAddr>().is_ok());
-        assert!("::1".parse::<IpAddr>().is_ok());
-        assert!("invalid".parse::<IpAddr>().is_err());
+        use crate::validation::validate_ip;
+        assert!(validate_ip("192.168.1.1").is_ok());
+        assert!(validate_ip("::1").is_ok());
+        assert!(validate_ip("invalid").is_err());
     }
 }

@@ -190,7 +190,10 @@ fn check_disk_space() -> CheckResult {
     use std::ffi::CString;
     use std::mem::MaybeUninit;
 
-    let path = CString::new("/var/lib/oustip").unwrap_or_else(|_| CString::new("/").unwrap());
+    let path = match CString::new("/var/lib/oustip").or_else(|_| CString::new("/")) {
+        Ok(p) => p,
+        Err(_) => return CheckResult::fail("disk", "Failed to create path for disk space check"),
+    };
 
     let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
     let result = unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) };

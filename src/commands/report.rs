@@ -77,6 +77,303 @@ pub struct TopBlockedIp {
     pub hostname: Option<String>,
 }
 
+// ============================================================================
+// Formatter Trait and Implementations
+// ============================================================================
+
+/// Trait for formatting reports in different output formats
+trait ReportFormatter {
+    fn format(&self, report: &Report) -> String;
+}
+
+/// Plain text formatter
+struct TextFormatter;
+
+impl TextFormatter {
+    const BORDER: &'static str =
+        "══════════════════════════════════════════════════════════════════";
+    const DIVIDER: &'static str =
+        " ────────────────────────────────────────────────────────────────";
+
+    fn format_header(&self, report: &Report) -> String {
+        let local: DateTime<Local> = report.generated_at.into();
+        format!(
+            "{}\n OUSTIP REPORT\n{}\n\n Generated: {}\n Hostname:  {}\n\n",
+            Self::BORDER,
+            Self::BORDER,
+            local.format("%Y-%m-%d %H:%M:%S"),
+            report.hostname
+        )
+    }
+
+    fn format_status(&self, status: &StatusInfo) -> String {
+        let mut out = format!(" STATUS\n{}\n", Self::DIVIDER);
+        out.push_str(&format!(
+            " Active:    {}\n",
+            if status.active { "YES" } else { "NO" }
+        ));
+        out.push_str(&format!(" Backend:   {}\n", status.backend));
+        out.push_str(&format!(
+            " Entries:   {}\n",
+            format_count(status.entries_in_set)
+        ));
+        if let Some(last) = status.last_update {
+            let local: DateTime<Local> = last.into();
+            out.push_str(&format!(
+                " Updated:   {}\n",
+                local.format("%Y-%m-%d %H:%M:%S")
+            ));
+        }
+        out.push('\n');
+        out
+    }
+
+    fn format_blocking(&self, blocking: &BlockingStats) -> String {
+        format!(
+            " BLOCKING STATISTICS (since boot)\n{}\n Packets:   {}\n Bytes:     {}\n\n",
+            Self::DIVIDER,
+            format_count(blocking.packets_blocked as usize),
+            blocking.bytes_blocked_human
+        )
+    }
+
+    fn format_sources(&self, sources: &[SourceInfo]) -> String {
+        if sources.is_empty() {
+            return String::new();
+        }
+        let mut out = format!(" SOURCES\n{}\n NAME                 IPs          ENTRIES\n", Self::DIVIDER);
+        for src in sources {
+            out.push_str(&format!(
+                " {:<20} {:>12} {:>12}\n",
+                truncate(&src.name, 20),
+                format_count(src.ip_count as usize),
+                format_count(src.raw_count)
+            ));
+        }
+        out.push('\n');
+        out
+    }
+
+    fn format_top_blocked(&self, top_blocked: &[TopBlockedIp]) -> String {
+        if top_blocked.is_empty() {
+            return String::new();
+        }
+        let mut out = format!(
+            " TOP BLOCKED IPs (last 24h)\n{}\n IP                          ATTEMPTS\n",
+            Self::DIVIDER
+        );
+        for ip in top_blocked {
+            out.push_str(&format!(
+                " {:<28} {:>8}\n",
+                ip.ip,
+                format_count(ip.count as usize)
+            ));
+        }
+        out.push('\n');
+        out
+    }
+}
+
+impl ReportFormatter for TextFormatter {
+    fn format(&self, report: &Report) -> String {
+        let mut out = self.format_header(report);
+        out.push_str(&self.format_status(&report.status));
+        out.push_str(&self.format_blocking(&report.blocking));
+        out.push_str(&self.format_sources(&report.sources));
+        out.push_str(&self.format_top_blocked(&report.top_blocked));
+        out.push_str(Self::BORDER);
+        out.push('\n');
+        out
+    }
+}
+
+/// Markdown formatter
+struct MarkdownFormatter;
+
+impl MarkdownFormatter {
+    fn format_header(&self, report: &Report) -> String {
+        let local: DateTime<Local> = report.generated_at.into();
+        format!(
+            "# OustIP Report - {}\n\n**Generated:** {}\n\n",
+            report.hostname,
+            local.format("%Y-%m-%d %H:%M:%S")
+        )
+    }
+
+    fn format_status(&self, status: &StatusInfo) -> String {
+        let mut out = String::from("## Status\n\n| Metric | Value |\n|--------|-------|\n");
+        out.push_str(&format!(
+            "| Active | {} |\n",
+            if status.active {
+                "✅ Yes"
+            } else {
+                "❌ No"
+            }
+        ));
+        out.push_str(&format!("| Backend | {} |\n", status.backend));
+        out.push_str(&format!(
+            "| Entries | {} |\n",
+            format_count(status.entries_in_set)
+        ));
+        if let Some(last) = status.last_update {
+            let local: DateTime<Local> = last.into();
+            out.push_str(&format!(
+                "| Last Update | {} |\n",
+                local.format("%Y-%m-%d %H:%M:%S")
+            ));
+        }
+        out.push('\n');
+        out
+    }
+
+    fn format_blocking(&self, blocking: &BlockingStats) -> String {
+        format!(
+            "## Blocking Statistics\n\n| Metric | Value |\n|--------|-------|\n| Packets Blocked | {} |\n| Bytes Blocked | {} |\n\n",
+            format_count(blocking.packets_blocked as usize),
+            blocking.bytes_blocked_human
+        )
+    }
+
+    fn format_sources(&self, sources: &[SourceInfo]) -> String {
+        if sources.is_empty() {
+            return String::new();
+        }
+        let mut out =
+            String::from("## Sources\n\n| Source | IPs | Entries |\n|--------|-----|--------|\n");
+        for src in sources {
+            out.push_str(&format!(
+                "| {} | {} | {} |\n",
+                src.name,
+                format_count(src.ip_count as usize),
+                format_count(src.raw_count)
+            ));
+        }
+        out.push('\n');
+        out
+    }
+
+    fn format_top_blocked(&self, top_blocked: &[TopBlockedIp]) -> String {
+        if top_blocked.is_empty() {
+            return String::new();
+        }
+        let mut out = String::from(
+            "## Top Blocked IPs (Last 24h)\n\n| IP | Attempts |\n|----|----------|\n",
+        );
+        for ip in top_blocked {
+            out.push_str(&format!(
+                "| {} | {} |\n",
+                ip.ip,
+                format_count(ip.count as usize)
+            ));
+        }
+        out.push('\n');
+        out
+    }
+}
+
+impl ReportFormatter for MarkdownFormatter {
+    fn format(&self, report: &Report) -> String {
+        let mut out = self.format_header(report);
+        out.push_str(&self.format_status(&report.status));
+        out.push_str(&self.format_blocking(&report.blocking));
+        out.push_str(&self.format_sources(&report.sources));
+        out.push_str(&self.format_top_blocked(&report.top_blocked));
+        out
+    }
+}
+
+// ============================================================================
+// Log Parser Module
+// ============================================================================
+
+mod log_parser {
+    use super::TopBlockedIp;
+    use std::collections::HashMap;
+    use std::process::Command;
+
+    /// Get top blocked IPs from system logs (journalctl or syslog)
+    pub async fn get_top_blocked_ips(limit: usize) -> Vec<TopBlockedIp> {
+        let log_output = fetch_log_output();
+        let ip_counts = parse_ip_counts(&log_output);
+        sorted_top_ips(ip_counts, limit)
+    }
+
+    fn fetch_log_output() -> String {
+        // Try journalctl first (systemd)
+        let output = Command::new("journalctl")
+            .args([
+                "-k", // kernel messages only
+                "--no-pager",
+                "-o",
+                "short",
+                "--since",
+                "24 hours ago",
+                "-g",
+                "oustip.*DROP", // grep for our drops
+            ])
+            .output();
+
+        match output {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            _ => {
+                // Fallback: try reading /var/log/kern.log or /var/log/syslog
+                if let Ok(content) = std::fs::read_to_string("/var/log/kern.log") {
+                    content
+                } else if let Ok(content) = std::fs::read_to_string("/var/log/syslog") {
+                    content
+                } else {
+                    String::new()
+                }
+            }
+        }
+    }
+
+    fn parse_ip_counts(log_output: &str) -> HashMap<String, u64> {
+        let mut ip_counts: HashMap<String, u64> = HashMap::new();
+
+        for line in log_output.lines() {
+            if !line.contains("oustip") && !line.contains("OUSTIP") {
+                continue;
+            }
+
+            // Extract SRC= IP address
+            // nftables log format: ... SRC=1.2.3.4 DST=...
+            // iptables log format: ... SRC=1.2.3.4 DST=...
+            if let Some(src_start) = line.find("SRC=") {
+                let src_part = &line[src_start + 4..];
+                if let Some(end) = src_part.find(|c: char| c.is_whitespace()) {
+                    let ip = &src_part[..end];
+                    // Validate it looks like an IP
+                    if ip.contains('.') || ip.contains(':') {
+                        *ip_counts.entry(ip.to_string()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+
+        ip_counts
+    }
+
+    fn sorted_top_ips(ip_counts: HashMap<String, u64>, limit: usize) -> Vec<TopBlockedIp> {
+        let mut sorted: Vec<_> = ip_counts.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+
+        sorted
+            .into_iter()
+            .take(limit)
+            .map(|(ip, count)| TopBlockedIp {
+                ip,
+                count,
+                hostname: None, // DNS resolution would be slow, skip for now
+            })
+            .collect()
+    }
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
 /// Run the report command
 pub async fn run(
     format: ReportFormat,
@@ -89,9 +386,9 @@ pub async fn run(
 
     // Output report
     let output = match format {
-        ReportFormat::Text => format_text(&report),
+        ReportFormat::Text => TextFormatter.format(&report),
         ReportFormat::Json => serde_json::to_string_pretty(&report)?,
-        ReportFormat::Markdown => format_markdown(&report),
+        ReportFormat::Markdown => MarkdownFormatter.format(&report),
     };
 
     println!("{}", output);
@@ -135,7 +432,7 @@ async fn generate_report(config: &Config, top_count: usize) -> Result<Report> {
     };
 
     // Get top blocked IPs from logs
-    let top_blocked = get_top_blocked_ips(top_count).await;
+    let top_blocked = log_parser::get_top_blocked_ips(top_count).await;
 
     Ok(Report {
         generated_at: Utc::now(),
@@ -164,248 +461,35 @@ async fn generate_report(config: &Config, top_count: usize) -> Result<Report> {
     })
 }
 
-/// Get top blocked IPs from system logs (journalctl or syslog)
-async fn get_top_blocked_ips(limit: usize) -> Vec<TopBlockedIp> {
-    use std::collections::HashMap;
-    use std::process::Command;
-
-    let mut ip_counts: HashMap<String, u64> = HashMap::new();
-
-    // Try journalctl first (systemd)
-    let output = Command::new("journalctl")
-        .args([
-            "-k", // kernel messages only
-            "--no-pager",
-            "-o",
-            "short",
-            "--since",
-            "24 hours ago",
-            "-g",
-            "oustip.*DROP", // grep for our drops
-        ])
-        .output();
-
-    let log_output = match output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
-        _ => {
-            // Fallback: try reading /var/log/kern.log or /var/log/syslog
-            if let Ok(content) = std::fs::read_to_string("/var/log/kern.log") {
-                content
-            } else if let Ok(content) = std::fs::read_to_string("/var/log/syslog") {
-                content
-            } else {
-                return Vec::new();
-            }
-        }
-    };
-
-    // Parse log lines for source IPs
-    // nftables log format: ... SRC=1.2.3.4 DST=...
-    // iptables log format: ... SRC=1.2.3.4 DST=...
-    for line in log_output.lines() {
-        if !line.contains("oustip") && !line.contains("OUSTIP") {
-            continue;
-        }
-
-        // Extract SRC= IP address
-        if let Some(src_start) = line.find("SRC=") {
-            let src_part = &line[src_start + 4..];
-            if let Some(end) = src_part.find(|c: char| c.is_whitespace()) {
-                let ip = &src_part[..end];
-                // Validate it looks like an IP
-                if ip.contains('.') || ip.contains(':') {
-                    *ip_counts.entry(ip.to_string()).or_insert(0) += 1;
-                }
-            }
-        }
-    }
-
-    // Sort by count and take top N
-    let mut sorted: Vec<_> = ip_counts.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
-
-    sorted
-        .into_iter()
-        .take(limit)
-        .map(|(ip, count)| TopBlockedIp {
-            ip,
-            count,
-            hostname: None, // DNS resolution would be slow, skip for now
-        })
-        .collect()
-}
-
-/// Format report as plain text
-fn format_text(report: &Report) -> String {
-    let mut out = String::new();
-
-    out.push_str("══════════════════════════════════════════════════════════════════\n");
-    out.push_str(" OUSTIP REPORT\n");
-    out.push_str("══════════════════════════════════════════════════════════════════\n\n");
-
-    let local: DateTime<Local> = report.generated_at.into();
-    out.push_str(&format!(
-        " Generated: {}\n",
-        local.format("%Y-%m-%d %H:%M:%S")
-    ));
-    out.push_str(&format!(" Hostname:  {}\n\n", report.hostname));
-
-    // Status
-    out.push_str(" STATUS\n");
-    out.push_str(" ────────────────────────────────────────────────────────────────\n");
-    out.push_str(&format!(
-        " Active:    {}\n",
-        if report.status.active { "YES" } else { "NO" }
-    ));
-    out.push_str(&format!(" Backend:   {}\n", report.status.backend));
-    out.push_str(&format!(
-        " Entries:   {}\n",
-        format_count(report.status.entries_in_set)
-    ));
-    if let Some(last) = report.status.last_update {
-        let local: DateTime<Local> = last.into();
-        out.push_str(&format!(
-            " Updated:   {}\n",
-            local.format("%Y-%m-%d %H:%M:%S")
-        ));
-    }
-    out.push('\n');
-
-    // Blocking stats
-    out.push_str(" BLOCKING STATISTICS (since boot)\n");
-    out.push_str(" ────────────────────────────────────────────────────────────────\n");
-    out.push_str(&format!(
-        " Packets:   {}\n",
-        format_count(report.blocking.packets_blocked as usize)
-    ));
-    out.push_str(&format!(
-        " Bytes:     {}\n\n",
-        report.blocking.bytes_blocked_human
-    ));
-
-    // Sources
-    if !report.sources.is_empty() {
-        out.push_str(" SOURCES\n");
-        out.push_str(" ────────────────────────────────────────────────────────────────\n");
-        out.push_str(" NAME                 IPs          ENTRIES\n");
-        for src in &report.sources {
-            out.push_str(&format!(
-                " {:<20} {:>12} {:>12}\n",
-                truncate(&src.name, 20),
-                format_count(src.ip_count as usize),
-                format_count(src.raw_count)
-            ));
-        }
-        out.push('\n');
-    }
-
-    // Top blocked
-    if !report.top_blocked.is_empty() {
-        out.push_str(" TOP BLOCKED IPs (last 24h)\n");
-        out.push_str(" ────────────────────────────────────────────────────────────────\n");
-        out.push_str(" IP                          ATTEMPTS\n");
-        for ip in &report.top_blocked {
-            out.push_str(&format!(
-                " {:<28} {:>8}\n",
-                ip.ip,
-                format_count(ip.count as usize)
-            ));
-        }
-        out.push('\n');
-    }
-
-    out.push_str("══════════════════════════════════════════════════════════════════\n");
-
-    out
-}
-
-/// Format report as Markdown
-fn format_markdown(report: &Report) -> String {
-    let mut out = String::new();
-
-    let local: DateTime<Local> = report.generated_at.into();
-    out.push_str(&format!("# OustIP Report - {}\n\n", report.hostname));
-    out.push_str(&format!(
-        "**Generated:** {}\n\n",
-        local.format("%Y-%m-%d %H:%M:%S")
-    ));
-
-    // Status
-    out.push_str("## Status\n\n");
-    out.push_str("| Metric | Value |\n");
-    out.push_str("|--------|-------|\n");
-    out.push_str(&format!(
-        "| Active | {} |\n",
-        if report.status.active {
-            "✅ Yes"
-        } else {
-            "❌ No"
-        }
-    ));
-    out.push_str(&format!("| Backend | {} |\n", report.status.backend));
-    out.push_str(&format!(
-        "| Entries | {} |\n",
-        format_count(report.status.entries_in_set)
-    ));
-    if let Some(last) = report.status.last_update {
-        let local: DateTime<Local> = last.into();
-        out.push_str(&format!(
-            "| Last Update | {} |\n",
-            local.format("%Y-%m-%d %H:%M:%S")
-        ));
-    }
-    out.push('\n');
-
-    // Blocking stats
-    out.push_str("## Blocking Statistics\n\n");
-    out.push_str("| Metric | Value |\n");
-    out.push_str("|--------|-------|\n");
-    out.push_str(&format!(
-        "| Packets Blocked | {} |\n",
-        format_count(report.blocking.packets_blocked as usize)
-    ));
-    out.push_str(&format!(
-        "| Bytes Blocked | {} |\n\n",
-        report.blocking.bytes_blocked_human
-    ));
-
-    // Sources
-    if !report.sources.is_empty() {
-        out.push_str("## Sources\n\n");
-        out.push_str("| Source | IPs | Entries |\n");
-        out.push_str("|--------|-----|--------|\n");
-        for src in &report.sources {
-            out.push_str(&format!(
-                "| {} | {} | {} |\n",
-                src.name,
-                format_count(src.ip_count as usize),
-                format_count(src.raw_count)
-            ));
-        }
-        out.push('\n');
-    }
-
-    // Top blocked
-    if !report.top_blocked.is_empty() {
-        out.push_str("## Top Blocked IPs (Last 24h)\n\n");
-        out.push_str("| IP | Attempts |\n");
-        out.push_str("|----|----------|\n");
-        for ip in &report.top_blocked {
-            out.push_str(&format!(
-                "| {} | {} |\n",
-                ip.ip,
-                format_count(ip.count as usize)
-            ));
-        }
-        out.push('\n');
-    }
-
-    out
-}
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Create a default report for testing with sensible defaults.
+    /// Override specific fields as needed using struct update syntax.
+    fn default_report() -> Report {
+        Report {
+            generated_at: Utc::now(),
+            hostname: "test-host".to_string(),
+            status: StatusInfo {
+                active: true,
+                backend: "nftables".to_string(),
+                entries_in_set: 1000,
+                last_update: None,
+            },
+            blocking: BlockingStats {
+                packets_blocked: 5000,
+                bytes_blocked: 1_000_000,
+                bytes_blocked_human: "1.0 MB".to_string(),
+            },
+            sources: vec![],
+            top_blocked: vec![],
+        }
+    }
 
     #[test]
     fn test_report_format_from_str_text() {
@@ -446,18 +530,9 @@ mod tests {
     #[test]
     fn test_report_serialization() {
         let report = Report {
-            generated_at: Utc::now(),
-            hostname: "test-host".to_string(),
             status: StatusInfo {
-                active: true,
-                backend: "nftables".to_string(),
-                entries_in_set: 1000,
                 last_update: Some(Utc::now()),
-            },
-            blocking: BlockingStats {
-                packets_blocked: 5000,
-                bytes_blocked: 1_000_000,
-                bytes_blocked_human: "1.0 MB".to_string(),
+                ..default_report().status
             },
             sources: vec![SourceInfo {
                 name: "firehol".to_string(),
@@ -469,6 +544,7 @@ mod tests {
                 count: 100,
                 hostname: None,
             }],
+            ..default_report()
         };
 
         let json = serde_json::to_string(&report).unwrap();
@@ -480,24 +556,20 @@ mod tests {
     #[test]
     fn test_format_text_contains_sections() {
         let report = Report {
-            generated_at: Utc::now(),
             hostname: "myhost".to_string(),
             status: StatusInfo {
-                active: true,
-                backend: "nftables".to_string(),
                 entries_in_set: 500,
-                last_update: None,
+                ..default_report().status
             },
             blocking: BlockingStats {
                 packets_blocked: 100,
                 bytes_blocked: 5000,
                 bytes_blocked_human: "5.0 KB".to_string(),
             },
-            sources: vec![],
-            top_blocked: vec![],
+            ..default_report()
         };
 
-        let text = format_text(&report);
+        let text = TextFormatter.format(&report);
         assert!(text.contains("OUSTIP REPORT"));
         assert!(text.contains("myhost"));
         assert!(text.contains("STATUS"));
@@ -509,7 +581,6 @@ mod tests {
     #[test]
     fn test_format_text_inactive_status() {
         let report = Report {
-            generated_at: Utc::now(),
             hostname: "host".to_string(),
             status: StatusInfo {
                 active: false,
@@ -522,24 +593,20 @@ mod tests {
                 bytes_blocked: 0,
                 bytes_blocked_human: "0 B".to_string(),
             },
-            sources: vec![],
-            top_blocked: vec![],
+            ..default_report()
         };
 
-        let text = format_text(&report);
+        let text = TextFormatter.format(&report);
         assert!(text.contains("NO"));
     }
 
     #[test]
     fn test_format_markdown_contains_sections() {
         let report = Report {
-            generated_at: Utc::now(),
             hostname: "markdown-host".to_string(),
             status: StatusInfo {
-                active: true,
-                backend: "nftables".to_string(),
-                entries_in_set: 1000,
                 last_update: Some(Utc::now()),
+                ..default_report().status
             },
             blocking: BlockingStats {
                 packets_blocked: 200,
@@ -556,9 +623,10 @@ mod tests {
                 count: 50,
                 hostname: None,
             }],
+            ..default_report()
         };
 
-        let md = format_markdown(&report);
+        let md = MarkdownFormatter.format(&report);
         assert!(md.contains("# OustIP Report"));
         assert!(md.contains("## Status"));
         assert!(md.contains("## Blocking Statistics"));
@@ -572,48 +640,41 @@ mod tests {
     #[test]
     fn test_format_markdown_active_status_emoji() {
         let report = Report {
-            generated_at: Utc::now(),
             hostname: "host".to_string(),
             status: StatusInfo {
-                active: true,
-                backend: "nftables".to_string(),
                 entries_in_set: 0,
-                last_update: None,
+                ..default_report().status
             },
             blocking: BlockingStats {
                 packets_blocked: 0,
                 bytes_blocked: 0,
                 bytes_blocked_human: "0 B".to_string(),
             },
-            sources: vec![],
-            top_blocked: vec![],
+            ..default_report()
         };
 
-        let md = format_markdown(&report);
+        let md = MarkdownFormatter.format(&report);
         assert!(md.contains("Yes"));
     }
 
     #[test]
     fn test_format_markdown_inactive_status_emoji() {
         let report = Report {
-            generated_at: Utc::now(),
             hostname: "host".to_string(),
             status: StatusInfo {
                 active: false,
-                backend: "nftables".to_string(),
                 entries_in_set: 0,
-                last_update: None,
+                ..default_report().status
             },
             blocking: BlockingStats {
                 packets_blocked: 0,
                 bytes_blocked: 0,
                 bytes_blocked_human: "0 B".to_string(),
             },
-            sources: vec![],
-            top_blocked: vec![],
+            ..default_report()
         };
 
-        let md = format_markdown(&report);
+        let md = MarkdownFormatter.format(&report);
         assert!(md.contains("No"));
     }
 
@@ -674,13 +735,10 @@ mod tests {
     #[test]
     fn test_format_text_with_sources() {
         let report = Report {
-            generated_at: Utc::now(),
             hostname: "host".to_string(),
             status: StatusInfo {
-                active: true,
-                backend: "nftables".to_string(),
                 entries_in_set: 100,
-                last_update: None,
+                ..default_report().status
             },
             blocking: BlockingStats {
                 packets_blocked: 0,
@@ -699,10 +757,10 @@ mod tests {
                     raw_count: 200,
                 },
             ],
-            top_blocked: vec![],
+            ..default_report()
         };
 
-        let text = format_text(&report);
+        let text = TextFormatter.format(&report);
         assert!(text.contains("SOURCES"));
         assert!(text.contains("source1"));
         assert!(text.contains("source2"));
@@ -711,20 +769,16 @@ mod tests {
     #[test]
     fn test_format_text_with_top_blocked() {
         let report = Report {
-            generated_at: Utc::now(),
             hostname: "host".to_string(),
             status: StatusInfo {
-                active: true,
-                backend: "nftables".to_string(),
                 entries_in_set: 100,
-                last_update: None,
+                ..default_report().status
             },
             blocking: BlockingStats {
                 packets_blocked: 0,
                 bytes_blocked: 0,
                 bytes_blocked_human: "0 B".to_string(),
             },
-            sources: vec![],
             top_blocked: vec![
                 TopBlockedIp {
                     ip: "1.1.1.1".to_string(),
@@ -737,9 +791,10 @@ mod tests {
                     hostname: None,
                 },
             ],
+            ..default_report()
         };
 
-        let text = format_text(&report);
+        let text = TextFormatter.format(&report);
         assert!(text.contains("TOP BLOCKED IPs"));
         assert!(text.contains("1.1.1.1"));
         assert!(text.contains("2.2.2.2"));

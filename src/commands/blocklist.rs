@@ -23,8 +23,26 @@ pub async fn run(action: BlocklistAction, config_path: &Path) -> Result<()> {
     }
 }
 
-/// Enable a blocklist source
-async fn enable_blocklist(name: &str, config_path: &Path) -> Result<()> {
+/// Get list of available blocklist names for error messages
+fn get_available_blocklist_names(config: &Config) -> String {
+    config
+        .blocklists
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Find blocklist index by name (case-insensitive)
+fn find_blocklist_index(config: &Config, name: &str) -> Option<usize> {
+    config
+        .blocklists
+        .iter()
+        .position(|b| b.name.eq_ignore_ascii_case(name))
+}
+
+/// Set the enabled state of a blocklist
+async fn set_blocklist_enabled(name: &str, enabled: bool, config_path: &Path) -> Result<()> {
     check_root()?;
 
     // Acquire lock to prevent concurrent config modifications
@@ -34,78 +52,47 @@ async fn enable_blocklist(name: &str, config_path: &Path) -> Result<()> {
     let mut config = Config::load(config_path)?;
 
     // Find blocklist index by name
-    let idx = config
-        .blocklists
-        .iter()
-        .position(|b| b.name.eq_ignore_ascii_case(name));
+    let idx = find_blocklist_index(&config, name);
+
+    let state_str = if enabled { "enabled" } else { "disabled" };
+    let action_str = if enabled { "Enabled" } else { "Disabled" };
 
     match idx {
         Some(i) => {
-            if config.blocklists[i].enabled {
+            if config.blocklists[i].enabled == enabled {
                 println!(
-                    "Blocklist '{}' is already enabled",
-                    config.blocklists[i].name
+                    "Blocklist '{}' is already {}",
+                    config.blocklists[i].name, state_str
                 );
             } else {
                 let blocklist_name = config.blocklists[i].name.clone();
-                config.blocklists[i].enabled = true;
+                config.blocklists[i].enabled = enabled;
                 config.save(config_path)?;
-                println!("[OK] Enabled blocklist '{}'", blocklist_name);
+                println!("[OK] {} blocklist '{}'", action_str, blocklist_name);
                 println!("     Run 'oustip update' to apply changes");
             }
         }
         None => {
-            println!("Blocklist '{}' not found.", name);
-            println!();
-            println!("Available blocklists:");
-            for b in &config.blocklists {
-                println!("  - {}", b.name);
-            }
-            anyhow::bail!("Blocklist not found");
+            let available = get_available_blocklist_names(&config);
+            anyhow::bail!(
+                "Blocklist '{}' not found. Available blocklists: {}",
+                name,
+                available
+            );
         }
     }
 
     Ok(())
 }
 
+/// Enable a blocklist source
+async fn enable_blocklist(name: &str, config_path: &Path) -> Result<()> {
+    set_blocklist_enabled(name, true, config_path).await
+}
+
 /// Disable a blocklist source
 async fn disable_blocklist(name: &str, config_path: &Path) -> Result<()> {
-    check_root()?;
-
-    // Acquire lock to prevent concurrent config modifications
-    let _lock = LockGuard::acquire()?;
-
-    // Load config
-    let mut config = Config::load(config_path)?;
-
-    // Find blocklist index by name
-    let idx = config
-        .blocklists
-        .iter()
-        .position(|b| b.name.eq_ignore_ascii_case(name));
-
-    match idx {
-        Some(i) => {
-            if !config.blocklists[i].enabled {
-                println!(
-                    "Blocklist '{}' is already disabled",
-                    config.blocklists[i].name
-                );
-            } else {
-                let blocklist_name = config.blocklists[i].name.clone();
-                config.blocklists[i].enabled = false;
-                config.save(config_path)?;
-                println!("[OK] Disabled blocklist '{}'", blocklist_name);
-                println!("     Run 'oustip update' to apply changes");
-            }
-        }
-        None => {
-            println!("Blocklist '{}' not found.", name);
-            anyhow::bail!("Blocklist not found");
-        }
-    }
-
-    Ok(())
+    set_blocklist_enabled(name, false, config_path).await
 }
 
 /// List all blocklist sources and their status
@@ -169,15 +156,18 @@ async fn show_blocklist(name: &str, dns: bool, limit: usize, config_path: &Path)
     let state = OustipState::load().unwrap_or_default();
 
     // Find the blocklist
-    let blocklist = config
-        .blocklists
-        .iter()
-        .find(|b| b.name.eq_ignore_ascii_case(name));
+    let idx = find_blocklist_index(&config, name);
 
-    let Some(blocklist) = blocklist else {
-        println!("Blocklist '{}' not found.", name);
-        anyhow::bail!("Blocklist not found");
+    let Some(idx) = idx else {
+        let available = get_available_blocklist_names(&config);
+        anyhow::bail!(
+            "Blocklist '{}' not found. Available blocklists: {}",
+            name,
+            available
+        );
     };
+
+    let blocklist = &config.blocklists[idx];
 
     // Find stats for this blocklist
     let source = state.sources.iter().find(|s| s.name == blocklist.name);
