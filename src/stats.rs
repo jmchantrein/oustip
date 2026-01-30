@@ -195,7 +195,13 @@ impl OustipState {
 
 /// Display formatted statistics
 pub async fn display_stats(config: &Config) -> Result<()> {
-    let state = OustipState::load().unwrap_or_default();
+    let state = match OustipState::load() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Warning: Could not load state: {}", e);
+            OustipState::default()
+        }
+    };
     let backend = create_backend(config.backend)?;
     let fw_stats = backend.get_stats().await.unwrap_or_default();
     let is_active = backend.is_active().await.unwrap_or(false);
@@ -287,6 +293,9 @@ pub async fn display_stats(config: &Config) -> Result<()> {
 fn format_duration_ago(dt: DateTime<Utc>) -> String {
     let now = Utc::now();
     let duration = now.signed_duration_since(dt);
+    if duration.num_seconds() < 0 {
+        return "in future (clock skew?)".to_string();
+    }
 
     let seconds = duration.num_seconds();
     if seconds < 60 {
@@ -740,11 +749,11 @@ mod tests {
 
     #[test]
     fn test_format_duration_ago_future() {
-        // Future time (edge case - shouldn't happen normally)
+        // Future time (edge case - shouldn't happen normally, indicates clock skew)
         let future = Utc::now() + Duration::hours(1);
-        // Should still return something (implementation dependent)
+        // Should return clock skew message
         let result = format_duration_ago(future);
-        assert!(!result.is_empty());
+        assert_eq!(result, "in future (clock skew?)");
     }
 
     #[test]

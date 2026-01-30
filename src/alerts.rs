@@ -7,7 +7,7 @@ use lettre::{Message, SmtpTransport, Transport};
 use reqwest::Client;
 use serde::Serialize;
 use std::time::Duration;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 use crate::config::AlertsConfig;
 
@@ -222,8 +222,7 @@ impl AlertManager {
         let response = request.send().await.context("Failed to send webhook")?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            warn!("Webhook returned non-success status: {}", status);
+            anyhow::bail!("Webhook returned non-success status: {}", response.status());
         }
 
         debug!("Webhook alert sent successfully");

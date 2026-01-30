@@ -230,6 +230,8 @@ impl Fetcher {
                 ..
             } => {
                 let mut all_ips = Vec::new();
+                let mut ipv4_failed = false;
+                let mut ipv6_failed = false;
 
                 // Fetch IPv4
                 match self
@@ -242,6 +244,7 @@ impl Fetcher {
                     }
                     Err(e) => {
                         warn!("Failed to fetch {} IPv4: {}", name, e);
+                        ipv4_failed = true;
                     }
                 }
 
@@ -257,8 +260,15 @@ impl Fetcher {
                         }
                         Err(e) => {
                             warn!("Failed to fetch {} IPv6: {}", name, e);
+                            ipv6_failed = true;
                         }
                     }
+                }
+
+                // Warn if allowlist is empty due to failures
+                if all_ips.is_empty() && (ipv4_failed || ipv6_failed) {
+                    warn!("Allowlist {} returned no IPs (IPv4 failed: {}, IPv6 failed: {})",
+                          name, ipv4_failed, ipv6_failed);
                 }
 
                 Ok(all_ips)
@@ -361,7 +371,7 @@ impl Fetcher {
             );
         }
 
-        let mut last_error = None;
+        let mut errors: Vec<String> = Vec::new();
 
         for attempt in 0..MAX_RETRIES {
             if attempt > 0 {
@@ -423,15 +433,15 @@ impl Fetcher {
 
                         return Ok(body);
                     }
-                    last_error = Some(anyhow::anyhow!("HTTP {}", response.status()));
+                    errors.push(format!("Attempt {}: HTTP {}", attempt + 1, response.status()));
                 }
                 Err(e) => {
-                    last_error = Some(e.into());
+                    errors.push(format!("Attempt {}: {}", attempt + 1, e));
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error")))
+        anyhow::bail!("Failed after {} attempts: {}", errors.len(), errors.last().unwrap_or(&"unknown".to_string()))
     }
 
     /// Fetch Cloudflare IPv4 ranges

@@ -5,6 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
+use tracing::debug;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::validation::{is_valid_interval, VALID_PRESETS};
@@ -185,6 +186,22 @@ impl Config {
             && !self.alerts.gotify.url.starts_with("https://")
         {
             anyhow::bail!("Gotify URL must use HTTPS: {}", self.alerts.gotify.url);
+        }
+
+        // Validate email addresses when email alerts are enabled
+        if self.alerts.email.enabled {
+            if !is_valid_email(&self.alerts.email.from) {
+                anyhow::bail!(
+                    "Invalid 'from' email address: {}",
+                    self.alerts.email.from
+                );
+            }
+            if !is_valid_email(&self.alerts.email.to) {
+                anyhow::bail!(
+                    "Invalid 'to' email address: {}",
+                    self.alerts.email.to
+                );
+            }
         }
 
         // Validate interface-based configuration if present
@@ -526,11 +543,13 @@ impl GotifyConfig {
         // First check custom env var if specified
         if let Some(ref env_name) = self.token_env {
             if let Ok(val) = env::var(env_name) {
+                debug!("Using {} from environment (overrides config)", env_name);
                 return SecureString::new(val);
             }
         }
         // Then check default env var
         if let Ok(val) = env::var("OUSTIP_GOTIFY_TOKEN") {
+            debug!("Using OUSTIP_GOTIFY_TOKEN from environment (overrides config)");
             return SecureString::new(val);
         }
         // Fall back to config value
@@ -562,11 +581,13 @@ impl EmailConfig {
         // First check custom env var if specified
         if let Some(ref env_name) = self.smtp_password_env {
             if let Ok(val) = env::var(env_name) {
+                debug!("Using {} from environment (overrides config)", env_name);
                 return SecureString::new(val);
             }
         }
         // Then check default env var
         if let Ok(val) = env::var("OUSTIP_SMTP_PASSWORD") {
+            debug!("Using OUSTIP_SMTP_PASSWORD from environment (overrides config)");
             return SecureString::new(val);
         }
         // Fall back to config value
@@ -778,6 +799,22 @@ fn default_allowlist() -> Vec<String> {
         "172.16.0.0/12".to_string(),  // RFC1918
         "127.0.0.0/8".to_string(),    // Loopback
     ]
+}
+
+/// Basic email format validation
+/// Checks that the email contains '@' with non-empty local and domain parts
+fn is_valid_email(email: &str) -> bool {
+    if email.is_empty() {
+        return false;
+    }
+    let parts: Vec<&str> = email.split('@').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let local = parts[0];
+    let domain = parts[1];
+    // Local part and domain must be non-empty, domain must contain at least one '.'
+    !local.is_empty() && !domain.is_empty() && domain.contains('.')
 }
 
 // =============================================================================
@@ -1777,5 +1814,116 @@ update_interval: 4h
 
         let result = Config::load(&config_path);
         assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // Email validation tests
+    // =========================================================================
+
+    #[test]
+    fn test_is_valid_email_valid() {
+        assert!(is_valid_email("user@example.com"));
+        assert!(is_valid_email("test.user@domain.org"));
+        assert!(is_valid_email("admin@sub.domain.co.uk"));
+    }
+
+    #[test]
+    fn test_is_valid_email_invalid() {
+        assert!(!is_valid_email(""));
+        assert!(!is_valid_email("user"));
+        assert!(!is_valid_email("@example.com"));
+        assert!(!is_valid_email("user@"));
+        assert!(!is_valid_email("user@domain")); // No dot in domain
+        assert!(!is_valid_email("user@@example.com"));
+    }
+
+    #[test]
+    fn test_config_validation_email_invalid_from() {
+        let config = Config {
+            alerts: AlertsConfig {
+                email: EmailConfig {
+                    enabled: true,
+                    smtp_host: "smtp.example.com".to_string(),
+                    smtp_port: 587,
+                    smtp_user: "user".to_string(),
+                    smtp_password: SecureString::new("pass".to_string()),
+                    smtp_password_env: None,
+                    from: "invalid-email".to_string(),
+                    to: "valid@example.com".to_string(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("'from' email"));
+    }
+
+    #[test]
+    fn test_config_validation_email_invalid_to() {
+        let config = Config {
+            alerts: AlertsConfig {
+                email: EmailConfig {
+                    enabled: true,
+                    smtp_host: "smtp.example.com".to_string(),
+                    smtp_port: 587,
+                    smtp_user: "user".to_string(),
+                    smtp_password: SecureString::new("pass".to_string()),
+                    smtp_password_env: None,
+                    from: "valid@example.com".to_string(),
+                    to: "invalid-email".to_string(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("'to' email"));
+    }
+
+    #[test]
+    fn test_config_validation_email_valid() {
+        let config = Config {
+            alerts: AlertsConfig {
+                email: EmailConfig {
+                    enabled: true,
+                    smtp_host: "smtp.example.com".to_string(),
+                    smtp_port: 587,
+                    smtp_user: "user".to_string(),
+                    smtp_password: SecureString::new("pass".to_string()),
+                    smtp_password_env: None,
+                    from: "from@example.com".to_string(),
+                    to: "to@example.com".to_string(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // Should pass validation
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_config_validation_email_disabled_skips_validation() {
+        let config = Config {
+            alerts: AlertsConfig {
+                email: EmailConfig {
+                    enabled: false,
+                    smtp_host: "".to_string(),
+                    smtp_port: 0,
+                    smtp_user: "".to_string(),
+                    smtp_password: SecureString::default(),
+                    smtp_password_env: None,
+                    from: "invalid".to_string(), // Would be invalid if enabled
+                    to: "also-invalid".to_string(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // Should pass because email is disabled
+        assert!(config.validate().is_ok());
     }
 }

@@ -46,9 +46,7 @@ fn check_disk_space() -> Result<()> {
     let result = unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) };
 
     if result != 0 {
-        // If we can't check disk space, log warning but continue
-        warn!("Could not check disk space, continuing anyway");
-        return Ok(());
+        anyhow::bail!("Cannot verify disk space: statvfs failed");
     }
 
     // SAFETY: statvfs succeeded, so stat is now initialized
@@ -258,6 +256,9 @@ async fn run_full_update(dry_run: bool, config_path: &Path) -> Result<()> {
     // Check failure threshold
     let total_sources = enabled_lists.len();
     let failed_sources = fetch_errors.len();
+    if total_sources == 0 {
+        return Ok(());
+    }
     let failure_rate = failed_sources as f64 / total_sources as f64;
 
     if failure_rate >= DEFAULT_FAILURE_THRESHOLD {
@@ -292,11 +293,13 @@ async fn run_full_update(dry_run: bool, config_path: &Path) -> Result<()> {
     }
 
     // Parse manual allowlist
-    let mut allowlist: Vec<IpNet> = config
-        .allowlist
-        .iter()
-        .filter_map(|s| s.parse().ok())
-        .collect();
+    let mut allowlist: Vec<IpNet> = Vec::new();
+    for entry in &config.allowlist {
+        match entry.parse::<IpNet>() {
+            Ok(net) => allowlist.push(net),
+            Err(_) => warn!("Invalid allowlist entry ignored: {}", entry),
+        }
+    }
 
     // Fetch auto-allowlist
     let auto_allowlist = fetcher.fetch_auto_allowlist(&config.auto_allowlist).await?;
@@ -408,7 +411,13 @@ async fn run_full_update(dry_run: bool, config_path: &Path) -> Result<()> {
     }
 
     // Load state for overlap detection and update
-    let mut state = OustipState::load().unwrap_or_default();
+    let mut state = match OustipState::load() {
+        Ok(s) => s,
+        Err(e) => {
+            warn!("State file unavailable, starting fresh: {}", e);
+            OustipState::default()
+        }
+    };
 
     // Detect allow+block overlaps BEFORE updating sources (need source_stats reference)
     let overlaps = detect_overlaps(&allowlist, &source_stats, &state).await;
@@ -649,7 +658,11 @@ async fn detect_overlaps(
     }
 
     // Limit to first 50 overlaps to avoid notification spam
-    overlaps.truncate(50);
+    let total_overlaps = overlaps.len();
+    if total_overlaps > 50 {
+        warn!("Showing first 50 of {} overlapping IPs", total_overlaps);
+        overlaps.truncate(50);
+    }
     overlaps
 }
 

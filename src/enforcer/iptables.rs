@@ -37,8 +37,12 @@ impl IptablesBackend {
         let v6_ips: Vec<&IpNet> = ips.iter().filter(|ip| matches!(ip, IpNet::V6(_))).collect();
 
         // Destroy existing sets if any
-        let _ = Command::new(ipset_path()).args(["destroy", IPSET_NAME]).output();
-        let _ = Command::new(ipset_path()).args(["destroy", IPSET_NAME_V6]).output();
+        if let Err(e) = Command::new(ipset_path()).args(["destroy", IPSET_NAME]).output() {
+            debug!("Could not destroy existing ipset {}: {}", IPSET_NAME, e);
+        }
+        if let Err(e) = Command::new(ipset_path()).args(["destroy", IPSET_NAME_V6]).output() {
+            debug!("Could not destroy existing ipset {}: {}", IPSET_NAME_V6, e);
+        }
 
         // Build restore script for atomic batch import
         let mut script = String::new();
@@ -361,10 +365,18 @@ impl FirewallBackend for IptablesBackend {
 
         // Create IPv4 chains and add rules
         self.create_chains(mode)?;
+        // Verify IPv4 chains were created
+        if !self.chains_exist() {
+            anyhow::bail!("Failed to create iptables IPv4 chains");
+        }
         self.add_blocking_rules()?;
 
         // Create IPv6 chains and add rules
         self.create_chains_v6(mode)?;
+        // Verify IPv6 chains were created
+        if !self.chains_exist_v6() {
+            anyhow::bail!("Failed to create ip6tables IPv6 chains");
+        }
         self.add_blocking_rules_v6()?;
 
         let v4_count = ips.iter().filter(|ip| matches!(ip, IpNet::V4(_))).count();

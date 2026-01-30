@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use ipnet::IpNet;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::{exec_cmd, nft_path, validate_entry_count, FirewallBackend, FirewallStats};
 use crate::config::FilterMode;
@@ -81,7 +81,13 @@ impl NftablesBackend {
             let elements: Vec<String> = ips
                 .iter()
                 .map(|ip| ip.to_string())
-                .filter(|s| is_safe_nft_element(s))
+                .filter(|s| {
+                    let safe = is_safe_nft_element(s);
+                    if !safe {
+                        warn!("Filtered unsafe nftables element: {}", s);
+                    }
+                    safe
+                })
                 .collect();
             script.push_str(&elements.join(", "));
             script.push_str(" }\n");
@@ -155,7 +161,13 @@ impl NftablesBackend {
             let elements: Vec<String> = ips
                 .iter()
                 .map(|ip| ip.to_string())
-                .filter(|s| is_safe_nft_element(s))
+                .filter(|s| {
+                    let safe = is_safe_nft_element(s);
+                    if !safe {
+                        warn!("Filtered unsafe nftables element: {}", s);
+                    }
+                    safe
+                })
                 .collect();
             script.push_str(&elements.join(", "));
             script.push_str(" }\n");
@@ -330,13 +342,21 @@ impl FirewallBackend for NftablesBackend {
                 let output =
                     exec_cmd(nft_path(), &["list", "set", "ip", TABLE_NAME, SET_NAME])?;
                 let ip_str = ip.to_string();
-                Ok(output.contains(&ip_str))
+                // More precise check - look for the IP as a complete entry
+                let ip_pattern = format!(" {} ", ip_str); // surrounded by spaces
+                let ip_pattern_comma = format!("{},", ip_str); // followed by comma
+                let ip_pattern_end = format!(" {}\n", ip_str); // at end of line
+                Ok(output.contains(&ip_pattern) || output.contains(&ip_pattern_comma) || output.contains(&ip_pattern_end) || output.ends_with(&ip_str))
             }
             IpNet::V6(_) => {
                 let output =
                     exec_cmd(nft_path(), &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6])?;
                 let ip_str = ip.to_string();
-                Ok(output.contains(&ip_str))
+                // More precise check - look for the IP as a complete entry
+                let ip_pattern = format!(" {} ", ip_str); // surrounded by spaces
+                let ip_pattern_comma = format!("{},", ip_str); // followed by comma
+                let ip_pattern_end = format!(" {}\n", ip_str); // at end of line
+                Ok(output.contains(&ip_pattern) || output.contains(&ip_pattern_comma) || output.contains(&ip_pattern_end) || output.ends_with(&ip_str))
             }
         }
     }
