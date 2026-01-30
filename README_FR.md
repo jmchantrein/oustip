@@ -13,7 +13,7 @@
 
 OustIP est un outil haute performance pour bloquer les IPs malveillantes sur les passerelles et routeurs Linux. Ecrit en Rust pour la securite memoire, zero pause de garbage collection, et une surface d'attaque minimale.
 
-[English Documentation](README.md)
+[English Documentation](README.md) | [Documentation API](https://jmchantrein.github.io/oustip/)
 
 ## Fonctionnalites
 
