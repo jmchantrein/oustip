@@ -562,11 +562,7 @@ pub fn calculate_change_percent(old_ips: u128, new_ips: u128) -> f64 {
         return if new_ips > 0 { 100.0 } else { 0.0 };
     }
 
-    let diff = if new_ips > old_ips {
-        new_ips - old_ips
-    } else {
-        old_ips - new_ips
-    };
+    let diff = new_ips.abs_diff(old_ips);
 
     (diff as f64 / old_ips as f64) * 100.0
 }
@@ -803,7 +799,7 @@ mod tests {
         // Change exactly at threshold
         let old_ips = 100_000u128;
         let new_ips = 110_000u128; // 10% increase
-        let threshold = 10.0;
+        let _threshold = 10.0; // Used for documentation, actual comparison is done separately
 
         let change = calculate_change_percent(old_ips, new_ips);
         // At 10%, should not trigger (need to exceed threshold, not equal)

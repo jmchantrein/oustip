@@ -7,7 +7,11 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tracing::{debug, info};
 
-use super::{exec_cmd, ip6tables_path, iptables_path, ipset_path, validate_entry_count, FirewallBackend, FirewallStats};
+use super::{
+    exec_cmd, ip6tables_path, ip6tables_restore_path, ip6tables_save_path, iptables_path,
+    iptables_restore_path, iptables_save_path, ipset_path, validate_entry_count, FirewallBackend,
+    FirewallStats,
+};
 use crate::config::FilterMode;
 
 const CHAIN_INPUT: &str = "OUSTIP-INPUT";
@@ -529,7 +533,7 @@ impl FirewallBackend for IptablesBackend {
         // Save iptables rules for our chains
         saved.push_str("### IPTABLES_START ###\n");
         // Save IPv4 rules - use iptables-save and filter for our chains
-        if let Ok(output) = exec_cmd("/usr/sbin/iptables-save", &[]) {
+        if let Ok(output) = exec_cmd(iptables_save_path(), &[]) {
             // Filter to keep only lines related to our chains
             for line in output.lines() {
                 if line.contains(CHAIN_INPUT)
@@ -547,7 +551,7 @@ impl FirewallBackend for IptablesBackend {
 
         // Save ip6tables rules for our chains
         saved.push_str("### IP6TABLES_START ###\n");
-        if let Ok(output) = exec_cmd("/usr/sbin/ip6tables-save", &[]) {
+        if let Ok(output) = exec_cmd(ip6tables_save_path(), &[]) {
             // Filter to keep only lines related to our chains
             for line in output.lines() {
                 if line.contains(CHAIN_INPUT_V6)
@@ -637,7 +641,7 @@ impl FirewallBackend for IptablesBackend {
 
         // Restore iptables rules
         if !iptables_rules.trim().is_empty() {
-            let mut child = Command::new("/usr/sbin/iptables-restore")
+            let mut child = Command::new(iptables_restore_path())
                 .arg("--noflush")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
@@ -663,7 +667,7 @@ impl FirewallBackend for IptablesBackend {
 
         // Restore ip6tables rules
         if !ip6tables_rules.trim().is_empty() {
-            let mut child = Command::new("/usr/sbin/ip6tables-restore")
+            let mut child = Command::new(ip6tables_restore_path())
                 .arg("--noflush")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
@@ -722,7 +726,7 @@ fn parse_human_number(s: &str) -> Option<u64> {
         (s, 1u64)
     };
 
-    num_part.parse::<u64>().ok().map(|n| n * multiplier)
+    num_part.parse::<u64>().ok().and_then(|n| n.checked_mul(multiplier))
 }
 
 #[cfg(test)]
@@ -750,6 +754,15 @@ mod tests {
     fn test_parse_human_number_with_whitespace() {
         assert_eq!(parse_human_number("  123  "), Some(123));
         assert_eq!(parse_human_number("  456K  "), Some(456_000));
+    }
+
+    #[test]
+    fn test_parse_human_number_overflow() {
+        // Test that extremely large numbers that would overflow return None
+        // u64::MAX is 18446744073709551615
+        // 18446744073709551615K would overflow
+        assert_eq!(parse_human_number("18446744073709551615G"), None);
+        assert_eq!(parse_human_number("99999999999999999999G"), None);
     }
 
     #[test]

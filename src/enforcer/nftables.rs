@@ -64,10 +64,10 @@ impl NftablesBackend {
     ) -> String {
         let mut script = String::new();
 
-        // Flush existing table if it exists
-        script.push_str(&format!("table ip {} {{\n", TABLE_NAME));
-        script.push_str("}\n");
-        script.push_str(&format!("delete table ip {}\n", TABLE_NAME));
+        // Create table if it doesn't exist (idempotent), then flush it
+        // This reduces the race window compared to delete+create
+        script.push_str(&format!("add table ip {}\n", TABLE_NAME));
+        script.push_str(&format!("flush table ip {}\n", TABLE_NAME));
 
         // Create table and set
         script.push_str(&format!("table ip {} {{\n", TABLE_NAME));
@@ -138,10 +138,10 @@ impl NftablesBackend {
     ) -> String {
         let mut script = String::new();
 
-        // Flush existing table if it exists
-        script.push_str(&format!("table ip6 {} {{\n", TABLE_NAME));
-        script.push_str("}\n");
-        script.push_str(&format!("delete table ip6 {}\n", TABLE_NAME));
+        // Create table if it doesn't exist (idempotent), then flush it
+        // This reduces the race window compared to delete+create
+        script.push_str(&format!("add table ip6 {}\n", TABLE_NAME));
+        script.push_str(&format!("flush table ip6 {}\n", TABLE_NAME));
 
         // Create table and set
         script.push_str(&format!("table ip6 {} {{\n", TABLE_NAME));
@@ -569,6 +569,19 @@ table ip oustip {
         // Should still create valid table structure
         assert!(script.contains("table ip oustip"));
         assert!(script.contains("set blocklist"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_uses_flush() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should use add+flush pattern instead of delete+create to reduce race window
+        assert!(script.contains("add table ip oustip"));
+        assert!(script.contains("flush table ip oustip"));
+        assert!(script.contains("add table ip6 oustip"));
+        assert!(script.contains("flush table ip6 oustip"));
     }
 
     #[test]

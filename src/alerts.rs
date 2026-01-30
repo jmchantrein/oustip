@@ -319,11 +319,7 @@ impl AlertTypes {
         } else {
             "decreased"
         };
-        let diff = if new_ips > old_ips {
-            new_ips - old_ips
-        } else {
-            old_ips - new_ips
-        };
+        let diff = new_ips.abs_diff(old_ips);
 
         (
             AlertLevel::Warning,

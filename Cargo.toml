@@ -17,6 +17,9 @@ tokio = { version = "1", features = ["full"] }
 # HTTP client (rustls for no OpenSSL dependency)
 reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
 
+# URL parsing (for SSRF protection)
+url = "2"
+
 # IP/CIDR parsing and aggregation
 ipnet = "2"
 

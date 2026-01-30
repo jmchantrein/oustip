@@ -26,6 +26,52 @@ const MAX_BLOCKLIST_SIZE: usize = 10 * 1024 * 1024;
 /// Maximum total size for all downloads combined (50 MB)
 const MAX_TOTAL_SIZE: usize = 50 * 1024 * 1024;
 
+/// Check if a URL points to a private or internal network (SSRF protection)
+///
+/// Returns true if the URL should be blocked, false if it's safe to fetch.
+fn is_private_or_internal_url(url: &str) -> bool {
+    if let Ok(parsed) = reqwest::Url::parse(url) {
+        // Use the typed Host enum for more reliable IP detection
+        if let Some(host) = parsed.host() {
+            match host {
+                url::Host::Ipv4(ipv4) => {
+                    return ipv4.is_loopback()
+                        || ipv4.is_private()
+                        || ipv4.is_link_local()
+                        || ipv4.is_broadcast()
+                        || ipv4.is_unspecified()
+                        // Link-local (169.254.x.x) - also checked by is_link_local()
+                        || (ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254);
+                }
+                url::Host::Ipv6(ipv6) => {
+                    return ipv6.is_loopback()
+                        || ipv6.is_unspecified()
+                        // Unique local addresses (fc00::/7)
+                        || (ipv6.segments()[0] & 0xfe00) == 0xfc00
+                        // Link-local (fe80::/10)
+                        || (ipv6.segments()[0] & 0xffc0) == 0xfe80;
+                }
+                url::Host::Domain(domain) => {
+                    // Check for localhost
+                    if domain == "localhost" {
+                        return true;
+                    }
+                    // Check for common internal hostnames
+                    let domain_lower = domain.to_lowercase();
+                    if domain_lower == "metadata"
+                        || domain_lower == "metadata.google.internal"
+                        || domain_lower.ends_with(".internal")
+                        || domain_lower.ends_with(".local")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Result of fetching a blocklist
 #[derive(Debug)]
 pub struct FetchResult {
@@ -307,6 +353,14 @@ impl Fetcher {
 
     /// Fetch content with retry logic and custom size limit
     async fn fetch_with_retry_and_limit(&self, url: &str, max_size: usize) -> Result<String> {
+        // SSRF protection: reject requests to private/internal networks
+        if is_private_or_internal_url(url) {
+            anyhow::bail!(
+                "URL points to private/internal network (SSRF protection): {}",
+                url
+            );
+        }
+
         let mut last_error = None;
 
         for attempt in 0..MAX_RETRIES {
@@ -581,6 +635,59 @@ mod tests {
         let content = "  192.168.1.1  \n  10.0.0.0/8  \n\t172.16.0.0/12\t\n";
         let ips = parse_blocklist(content);
         assert_eq!(ips.len(), 3);
+    }
+
+    #[test]
+    fn test_ssrf_localhost() {
+        assert!(is_private_or_internal_url("http://localhost/api"));
+        assert!(is_private_or_internal_url("http://127.0.0.1/api"));
+        assert!(is_private_or_internal_url("http://[::1]/api"));
+    }
+
+    #[test]
+    fn test_ssrf_private_ipv4() {
+        // 10.x.x.x
+        assert!(is_private_or_internal_url("http://10.0.0.1/api"));
+        assert!(is_private_or_internal_url("http://10.255.255.255/api"));
+        // 172.16-31.x.x
+        assert!(is_private_or_internal_url("http://172.16.0.1/api"));
+        assert!(is_private_or_internal_url("http://172.31.255.255/api"));
+        // 192.168.x.x
+        assert!(is_private_or_internal_url("http://192.168.0.1/api"));
+        assert!(is_private_or_internal_url("http://192.168.255.255/api"));
+    }
+
+    #[test]
+    fn test_ssrf_link_local() {
+        assert!(is_private_or_internal_url("http://169.254.169.254/metadata"));
+        assert!(is_private_or_internal_url("http://169.254.0.1/api"));
+    }
+
+    #[test]
+    fn test_ssrf_internal_hostnames() {
+        assert!(is_private_or_internal_url("http://metadata.google.internal/"));
+        assert!(is_private_or_internal_url("http://something.internal/"));
+        assert!(is_private_or_internal_url("http://myhost.local/"));
+    }
+
+    #[test]
+    fn test_ssrf_public_allowed() {
+        // Public IPs should be allowed
+        assert!(!is_private_or_internal_url("http://8.8.8.8/"));
+        assert!(!is_private_or_internal_url("https://example.com/"));
+        assert!(!is_private_or_internal_url("https://github.com/api"));
+        assert!(!is_private_or_internal_url(
+            "https://www.cloudflare.com/ips-v4"
+        ));
+    }
+
+    #[test]
+    fn test_ssrf_ipv6_private() {
+        // Unique local addresses (fc00::/7)
+        assert!(is_private_or_internal_url("http://[fc00::1]/"));
+        assert!(is_private_or_internal_url("http://[fd00::1]/"));
+        // Link-local (fe80::/10)
+        assert!(is_private_or_internal_url("http://[fe80::1]/"));
     }
 }
 

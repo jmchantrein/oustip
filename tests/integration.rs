@@ -494,7 +494,7 @@ fn test_allowlist_without_action() {
 fn test_health_json_format() {
     let output = run_oustip(&["health", "--json"]);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let _stderr = String::from_utf8_lossy(&output.stderr);
 
     // JSON output should have JSON structure or fail gracefully
     if output.status.success() && !stdout.is_empty() {

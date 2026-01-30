@@ -80,11 +80,16 @@ impl OustipState {
 
     /// Create a backup of the current state file
     fn backup_state() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
         let path = Path::new(STATE_FILE);
         let backup_path = Path::new(STATE_BACKUP_FILE);
 
         if path.exists() {
             fs::copy(path, backup_path).context("Failed to create state backup")?;
+            // Set restrictive permissions on backup file (owner read/write only)
+            fs::set_permissions(backup_path, fs::Permissions::from_mode(0o600))
+                .context("Failed to set backup file permissions")?;
         }
 
         Ok(())
@@ -98,6 +103,7 @@ impl OustipState {
     /// A backup is created before each save for recovery purposes.
     pub fn save(&self) -> Result<()> {
         use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
 
         let path = Path::new(STATE_FILE);
         if let Some(parent) = path.parent() {
@@ -126,6 +132,10 @@ impl OustipState {
         temp_file
             .persist(path)
             .context("Failed to persist state file")?;
+
+        // Set restrictive permissions on state file (owner read/write only)
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .context("Failed to set state file permissions")?;
 
         Ok(())
     }

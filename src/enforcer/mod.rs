@@ -25,12 +25,24 @@ const IP6TABLES_PATH_USR_SBIN: &str = "/usr/sbin/ip6tables";
 const IP6TABLES_PATH_SBIN: &str = "/sbin/ip6tables";
 const IPSET_PATH_USR_SBIN: &str = "/usr/sbin/ipset";
 const IPSET_PATH_SBIN: &str = "/sbin/ipset";
+const IPTABLES_SAVE_PATH_USR_SBIN: &str = "/usr/sbin/iptables-save";
+const IPTABLES_SAVE_PATH_SBIN: &str = "/sbin/iptables-save";
+const IP6TABLES_SAVE_PATH_USR_SBIN: &str = "/usr/sbin/ip6tables-save";
+const IP6TABLES_SAVE_PATH_SBIN: &str = "/sbin/ip6tables-save";
+const IPTABLES_RESTORE_PATH_USR_SBIN: &str = "/usr/sbin/iptables-restore";
+const IPTABLES_RESTORE_PATH_SBIN: &str = "/sbin/iptables-restore";
+const IP6TABLES_RESTORE_PATH_USR_SBIN: &str = "/usr/sbin/ip6tables-restore";
+const IP6TABLES_RESTORE_PATH_SBIN: &str = "/sbin/ip6tables-restore";
 
 // Static storage for resolved command paths
 static NFT_PATH: OnceLock<&'static str> = OnceLock::new();
 static IPTABLES_PATH: OnceLock<&'static str> = OnceLock::new();
 static IP6TABLES_PATH: OnceLock<&'static str> = OnceLock::new();
 static IPSET_PATH: OnceLock<&'static str> = OnceLock::new();
+static IPTABLES_SAVE_PATH: OnceLock<&'static str> = OnceLock::new();
+static IP6TABLES_SAVE_PATH: OnceLock<&'static str> = OnceLock::new();
+static IPTABLES_RESTORE_PATH: OnceLock<&'static str> = OnceLock::new();
+static IP6TABLES_RESTORE_PATH: OnceLock<&'static str> = OnceLock::new();
 
 /// Find the absolute path for a command, checking /usr/sbin first, then /sbin.
 /// Falls back to the bare command name if neither exists (relies on PATH).
@@ -63,6 +75,50 @@ pub(crate) fn ip6tables_path() -> &'static str {
 /// Get the absolute path for ipset command
 pub(crate) fn ipset_path() -> &'static str {
     IPSET_PATH.get_or_init(|| find_command("ipset", IPSET_PATH_USR_SBIN, IPSET_PATH_SBIN))
+}
+
+/// Get the absolute path for iptables-save command
+pub(crate) fn iptables_save_path() -> &'static str {
+    IPTABLES_SAVE_PATH.get_or_init(|| {
+        find_command(
+            "iptables-save",
+            IPTABLES_SAVE_PATH_USR_SBIN,
+            IPTABLES_SAVE_PATH_SBIN,
+        )
+    })
+}
+
+/// Get the absolute path for ip6tables-save command
+pub(crate) fn ip6tables_save_path() -> &'static str {
+    IP6TABLES_SAVE_PATH.get_or_init(|| {
+        find_command(
+            "ip6tables-save",
+            IP6TABLES_SAVE_PATH_USR_SBIN,
+            IP6TABLES_SAVE_PATH_SBIN,
+        )
+    })
+}
+
+/// Get the absolute path for iptables-restore command
+pub(crate) fn iptables_restore_path() -> &'static str {
+    IPTABLES_RESTORE_PATH.get_or_init(|| {
+        find_command(
+            "iptables-restore",
+            IPTABLES_RESTORE_PATH_USR_SBIN,
+            IPTABLES_RESTORE_PATH_SBIN,
+        )
+    })
+}
+
+/// Get the absolute path for ip6tables-restore command
+pub(crate) fn ip6tables_restore_path() -> &'static str {
+    IP6TABLES_RESTORE_PATH.get_or_init(|| {
+        find_command(
+            "ip6tables-restore",
+            IP6TABLES_RESTORE_PATH_USR_SBIN,
+            IP6TABLES_RESTORE_PATH_SBIN,
+        )
+    })
 }
 
 /// Warning threshold for large blocklists (500k entries)

@@ -1,7 +1,9 @@
 //! IPv6 management command implementation.
 
 use anyhow::{Context, Result};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::process::Command;
 use tracing::info;
 
@@ -32,7 +34,16 @@ net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 "#;
 
-    fs::write(SYSCTL_CONF, config).context("Failed to write sysctl config")?;
+    // Write config file with explicit restrictive permissions (0o644 for sysctl files)
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o644) // Standard sysctl.d permissions: owner rw, group/other r
+        .open(SYSCTL_CONF)
+        .context("Failed to create sysctl config file")?;
+    file.write_all(config.as_bytes())
+        .context("Failed to write sysctl config")?;
 
     // Apply immediately
     Command::new("sysctl")
