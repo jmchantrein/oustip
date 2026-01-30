@@ -1,0 +1,17 @@
+# Clippy configuration
+# https://doc.rust-lang.org/clippy/configuration.html
+
+# Allow functions with many arguments (default: 7)
+too-many-arguments-threshold = 10
+
+# Cognitive complexity threshold (default: 25)
+cognitive-complexity-threshold = 30
+
+# Maximum lines in a function body (default: 100)
+too-many-lines-threshold = 150
+
+# MSRV (Minimum Supported Rust Version)
+msrv = "1.75.0"
+
+# Allowed names for variables (avoid triggering similar_names lint)
+allowed-idents-below-min-chars = ["i", "j", "k", "n", "x", "y", "ip", "id", "ok"]

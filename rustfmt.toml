@@ -1,0 +1,19 @@
+# Rustfmt configuration (stable options only)
+# https://rust-lang.github.io/rustfmt/
+
+# Maximum width of each line
+max_width = 100
+
+# Use field initialization shorthand
+use_field_init_shorthand = true
+
+# Use Unix line endings
+newline_style = "Unix"
+
+# Edition to use for parsing
+edition = "2021"
+
+# Note: These options require nightly and are commented out:
+# imports_granularity = "Module"
+# group_imports = "StdExternalCrate"
+# format_strings = false
