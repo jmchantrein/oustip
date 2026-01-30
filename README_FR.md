@@ -78,13 +78,26 @@ services:
 
 ```bash
 # Commandes principales
-oustip install                   # Installer OustIP
+oustip install                   # Installer OustIP (interactif)
+oustip install --headless        # Installer avec auto-detection des interfaces
 oustip install --preset paranoid # Installer avec un preset specifique
-oustip update                    # Mettre a jour les blocklists et appliquer les regles
-oustip update --preset minimal   # Utiliser un preset specifique pour cette execution
+oustip install --config-file /chemin/vers/config.yaml  # Installer avec config existante
+oustip update                    # Mise a jour complete: fetch listes + appliquer regles
+oustip update presets            # Recharger les definitions de presets.yaml
+oustip update lists              # Telecharger blocklists et allowlists
+oustip update config             # Recharger config.yaml et appliquer les regles pare-feu
 oustip update --dry-run          # Simulation: telecharger sans appliquer les regles
 oustip stats                     # Afficher les statistiques de blocage
 oustip status                    # Afficher le statut actuel
+
+# Detection d'interfaces
+oustip interfaces detect         # Detecter les interfaces reseau et suggerer les modes
+
+# Gestion des presets
+oustip presets list              # Lister tous les presets disponibles
+oustip presets list --blocklist  # Lister les presets blocklist uniquement
+oustip presets list --allowlist  # Lister les presets allowlist uniquement
+oustip presets show <nom>        # Afficher les details d'un preset specifique
 
 # Activer/desactiver
 oustip enable                    # Activer le blocage
@@ -143,7 +156,15 @@ oustip uninstall                # Tout supprimer
 
 ## Configuration
 
-Fichier de configuration : `/etc/oustip/config.yaml`
+OustIP utilise deux fichiers de configuration :
+- `/etc/oustip/config.yaml` - Configuration principale (interfaces, alertes, parametres)
+- `/etc/oustip/presets.yaml` - Sources et presets de blocklist/allowlist
+
+Apres modification des fichiers, executez la commande appropriee :
+- `oustip update config` - Apres modification de config.yaml
+- `oustip update presets && oustip update lists` - Apres modification de presets.yaml
+
+### Configuration par Interface (config.yaml)
 
 ```yaml
 # Langue (en, fr)
@@ -157,36 +178,35 @@ backend: auto
 # - conntrack: apres conntrack (permet les reponses aux connexions sortantes)
 mode: conntrack
 
-# Alerter sur les connexions sortantes vers des IPs bloquees (mode conntrack uniquement)
-# Utile pour detecter les compromissions potentielles sur le reseau local
-alert_outbound_to_blocklist: true
+# Intervalle de mise a jour pour le timer systemd (ex: 4h, 6h, 12h, 1d)
+update_interval: "4h"
 
-# Intervalle de mise a jour pour le timer systemd (ex: 6h, 12h, 1d)
-update_interval: "6h"
+# Configuration par interface
+# Utilisez 'oustip interfaces detect' pour auto-detecter les interfaces
+interfaces:
+  # Interface WAN - exposee a internet, protection blocklist complete
+  eth0:
+    mode: wan
+    blocklist_preset: paranoid    # Bloquer les IPs suspectes d'internet
+    allowlist_preset: cdn_common  # Autoriser CDN (Cloudflare, GitHub, Fastly)
 
-# Preset (minimal, recommended, full, paranoid)
-preset: recommended
+  # Interface LAN - reseau interne, surveillance du trafic sortant
+  eth1:
+    mode: lan
+    allowlist_preset: rfc1918     # Autoriser reseaux prives
+    outbound_monitor:             # Surveillance pour detection de compromission
+      blocklist_preset: recommended
+      action: alert               # alert, block, block_and_alert
 
-# Sources de blocklists
-blocklists:
-  - name: firehol_level1
-    url: https://iplists.firehol.org/files/firehol_level1.netset
-    enabled: true
-  # ... autres listes
+  # Interfaces de confiance - pas de filtrage (conteneurs, tunnels VPN)
+  docker0:
+    mode: trusted
+  wg0:
+    mode: trusted
 
-# Auto-allowlist des fournisseurs CDN
-auto_allowlist:
-  cloudflare: true
-  github: true
-  google_cloud: false
-  aws: false
-  fastly: false
-
-# Liste blanche manuelle
-allowlist:
-  - "192.168.0.0/16"
-  - "10.0.0.0/8"
-  - "172.16.0.0/12"
+# Configuration IPv6
+ipv6:
+  boot_state: unchanged  # disabled, enabled, unchanged
 
 # Destinations d'alertes
 alerts:
@@ -200,15 +220,79 @@ alerts:
     smtp_host: "smtp.example.com"
     smtp_port: 587
     smtp_user: "alerts@example.com"
-    smtp_password: ""            # Peut etre defini directement ici
-    smtp_password_env: "MY_SMTP_PASS" # Ou via variable d'environnement
+    smtp_password: ""            # Peut etre defini via OUSTIP_SMTP_PASSWORD
     from: "oustip@example.com"
-    to: ["admin@example.com"]
+    to: "admin@example.com"
   webhook:
     enabled: false
     url: ""
-    headers: {}  # En-tetes personnalises optionnels
+    headers: {}
 ```
+
+### Configuration des Presets (presets.yaml)
+
+```yaml
+# Sources de blocklist
+blocklist_sources:
+  spamhaus_drop:
+    url: https://www.spamhaus.org/drop/drop.txt
+    description:
+      en: "Spamhaus DROP - Hijacked/leased for spam/malware"
+      fr: "Spamhaus DROP - Detournees/louees pour spam/malware"
+  # ... autres sources
+
+# Presets blocklist avec heritage
+blocklist_presets:
+  minimal:
+    description:
+      fr: "Serveurs production - quasi-zero faux positifs"
+    sources:
+      - spamhaus_drop
+      - spamhaus_edrop
+      - dshield
+
+  recommended:
+    description:
+      fr: "Defaut recommande - bon equilibre"
+    extends: minimal  # Herite toutes les sources de minimal
+    sources:
+      - firehol_level1
+      - firehol_level2
+
+# Sources d'allowlist (statiques et dynamiques)
+allowlist_sources:
+  rfc1918:
+    static:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+    description:
+      fr: "Reseaux prives RFC1918"
+
+  cloudflare:
+    url: https://www.cloudflare.com/ips-v4
+    url_v6: https://www.cloudflare.com/ips-v6
+    description:
+      fr: "Plages IP Cloudflare CDN"
+
+# Presets d'allowlist
+allowlist_presets:
+  cdn_common:
+    sources:
+      - cloudflare
+      - github
+      - fastly
+```
+
+### Modes d'Interface
+
+| Mode | Description | Cas d'Usage |
+|------|-------------|-------------|
+| `wan` | Protection blocklist complete | Interfaces exposees a internet |
+| `lan` | RFC1918 auto-autorise, surveillance sortante | Interfaces reseau interne |
+| `trusted` | Pas de filtrage | Tunnels VPN, bridges conteneurs |
+
+Note: `lo` (loopback) est toujours trusted et ne peut pas etre configure.
 
 ### Variables d'Environnement pour les Identifiants
 

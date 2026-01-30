@@ -181,12 +181,12 @@ async fn test_concurrent_operations() {
 fn test_yaml_malformed_input() {
     // Invalid YAML should fail gracefully
     let invalid_yaml = "{{{{not valid yaml";
-    let result: Result<serde_yaml::Value, _> = serde_yaml::from_str(invalid_yaml);
+    let result: Result<serde_yml::Value, _> = serde_yml::from_str(invalid_yaml);
     assert!(result.is_err());
 
     // Deeply nested YAML
     let deep_yaml = "a:\n  b:\n    c:\n      d:\n        e: value";
-    let result: Result<serde_yaml::Value, _> = serde_yaml::from_str(deep_yaml);
+    let result: Result<serde_yml::Value, _> = serde_yml::from_str(deep_yaml);
     assert!(result.is_ok());
 }
 

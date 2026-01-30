@@ -39,9 +39,17 @@ async fn main() -> Result<()> {
 
     // Execute command
     match cli.command {
-        Commands::Install { preset } => oustip::commands::install::run(preset, &cli.config).await,
-        Commands::Update { preset, dry_run } => {
-            oustip::commands::update::run(preset, dry_run, &cli.config).await
+        Commands::Install { preset, headless, config_file } => {
+            oustip::commands::install::run(preset, headless, config_file, &cli.config).await
+        }
+        Commands::Update { target, dry_run } => {
+            oustip::commands::update::run(target, dry_run, &cli.config).await
+        }
+        Commands::Interfaces { action } => {
+            oustip::commands::interfaces::run(action, cli.lang.as_deref()).await
+        }
+        Commands::Presets { action } => {
+            oustip::commands::presets::run(action, cli.lang.as_deref()).await
         }
         Commands::Stats => oustip::commands::stats::run(&cli.config).await,
         Commands::Check { ip } => oustip::commands::check::run(&ip, &cli.config).await,

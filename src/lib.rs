@@ -24,7 +24,7 @@
 //! │  CLI (clap)                                                 │
 //! │    └── Commands: install, update, status, check, report... │
 //! ├─────────────────────────────────────────────────────────────┤
-//! │  Config (serde_yaml)                                        │
+//! │  Config (serde_yml)                                         │
 //! │    └── Presets: minimal, recommended, full, paranoid        │
 //! ├─────────────────────────────────────────────────────────────┤
 //! │  Fetcher (reqwest + rustls)                                 │
@@ -117,11 +117,13 @@ pub mod dns;
 pub mod enforcer;
 pub mod fetcher;
 pub mod installer;
+pub mod interfaces;
 pub mod lock;
+pub mod presets;
 pub mod signal;
 pub mod stats;
 pub mod utils;
 pub mod validation;
 
-pub use cli::{AllowlistAction, Cli, Commands, Ipv6Action};
+pub use cli::{AllowlistAction, Cli, Commands, InterfacesAction, Ipv6Action, PresetsAction, UpdateTarget};
 pub use config::Config;

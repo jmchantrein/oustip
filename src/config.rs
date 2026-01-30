@@ -108,7 +108,7 @@ impl Config {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
-        let config: Config = serde_yaml::from_str(&content)
+        let config: Config = serde_yml::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
 
         // Validate configuration
@@ -174,7 +174,7 @@ impl Config {
         use tempfile::NamedTempFile;
 
         let path = path.as_ref();
-        let content = serde_yaml::to_string(self).with_context(|| "Failed to serialize config")?;
+        let content = serde_yml::to_string(self).with_context(|| "Failed to serialize config")?;
 
         // Create temporary file in the same directory for atomic rename
         let parent_dir = path.parent().unwrap_or(Path::new("/etc/oustip"));
@@ -494,6 +494,300 @@ fn default_allowlist() -> Vec<String> {
     ]
 }
 
+// =============================================================================
+// NEW INTERFACE-BASED CONFIGURATION (v2)
+// =============================================================================
+
+/// Interface mode for firewall rules
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InterfaceMode {
+    /// WAN interface - exposed to internet, full blocklist protection
+    Wan,
+    /// LAN interface - internal network, RFC1918 auto-allowed
+    #[default]
+    Lan,
+    /// Trusted interface - no filtering (VPN, containers)
+    Trusted,
+}
+
+/// Action for outbound monitoring
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OutboundAction {
+    /// Log and alert, but allow traffic (non-disruptive detection)
+    #[default]
+    Alert,
+    /// Silently block traffic
+    Block,
+    /// Block traffic and send alert
+    BlockAndAlert,
+}
+
+/// Outbound monitoring configuration for LAN interfaces
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OutboundMonitorConfig {
+    /// Blocklist preset to check against for outbound connections
+    pub blocklist_preset: String,
+    /// Action to take when outbound traffic matches blocklist
+    pub action: OutboundAction,
+}
+
+/// Per-interface configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InterfaceConfig {
+    /// Interface mode (wan, lan, trusted)
+    pub mode: InterfaceMode,
+    /// Blocklist preset for this interface (wan mode)
+    #[serde(default)]
+    pub blocklist_preset: Option<String>,
+    /// Allowlist preset for this interface
+    #[serde(default)]
+    pub allowlist_preset: Option<String>,
+    /// Outbound monitoring config (lan mode)
+    #[serde(default)]
+    pub outbound_monitor: Option<OutboundMonitorConfig>,
+}
+
+impl Default for InterfaceConfig {
+    fn default() -> Self {
+        Self {
+            mode: InterfaceMode::Lan,
+            blocklist_preset: None,
+            allowlist_preset: None,
+            outbound_monitor: None,
+        }
+    }
+}
+
+impl InterfaceConfig {
+    /// Create a WAN interface configuration
+    pub fn wan(blocklist_preset: &str, allowlist_preset: Option<&str>) -> Self {
+        Self {
+            mode: InterfaceMode::Wan,
+            blocklist_preset: Some(blocklist_preset.to_string()),
+            allowlist_preset: allowlist_preset.map(|s| s.to_string()),
+            outbound_monitor: None,
+        }
+    }
+
+    /// Create a LAN interface configuration
+    pub fn lan(allowlist_preset: &str, monitor_preset: &str, action: OutboundAction) -> Self {
+        Self {
+            mode: InterfaceMode::Lan,
+            blocklist_preset: None,
+            allowlist_preset: Some(allowlist_preset.to_string()),
+            outbound_monitor: Some(OutboundMonitorConfig {
+                blocklist_preset: monitor_preset.to_string(),
+                action,
+            }),
+        }
+    }
+
+    /// Create a trusted interface configuration
+    pub fn trusted() -> Self {
+        Self {
+            mode: InterfaceMode::Trusted,
+            blocklist_preset: None,
+            allowlist_preset: None,
+            outbound_monitor: None,
+        }
+    }
+}
+
+/// New configuration structure with interface-based filtering (v2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ConfigV2 {
+    /// Language for messages (en, fr)
+    pub language: String,
+
+    /// Firewall backend (auto, iptables, nftables)
+    pub backend: Backend,
+
+    /// Filtering mode (raw, conntrack)
+    pub mode: FilterMode,
+
+    /// Per-interface configuration
+    pub interfaces: HashMap<String, InterfaceConfig>,
+
+    /// Raw nftables/iptables rules for advanced users
+    #[serde(default)]
+    pub raw_rules: Option<RawRulesConfig>,
+
+    /// Alert destinations
+    pub alerts: AlertsConfig,
+
+    /// Update interval for systemd timer
+    pub update_interval: String,
+
+    /// IPv6 configuration
+    pub ipv6: Ipv6Config,
+}
+
+/// Raw firewall rules for advanced users
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct RawRulesConfig {
+    /// Raw nftables rules
+    #[serde(default)]
+    pub nftables: Option<String>,
+    /// Raw iptables rules
+    #[serde(default)]
+    pub iptables: Option<String>,
+}
+
+impl Default for ConfigV2 {
+    fn default() -> Self {
+        Self {
+            language: "en".to_string(),
+            backend: Backend::Auto,
+            mode: FilterMode::Conntrack,
+            interfaces: HashMap::new(),
+            raw_rules: None,
+            alerts: AlertsConfig::default(),
+            update_interval: "4h".to_string(),
+            ipv6: Ipv6Config::default(),
+        }
+    }
+}
+
+impl ConfigV2 {
+    /// Load configuration from YAML file
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let content = std::fs::read_to_string(path.as_ref())
+            .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
+        let config: ConfigV2 = serde_yml::from_str(&content)
+            .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
+
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Validate configuration
+    pub fn validate(&self) -> Result<()> {
+        // Validate update interval
+        if !is_valid_interval(&self.update_interval) {
+            anyhow::bail!(
+                "Invalid update_interval '{}'. Use format like '4h', '30m', '1d'",
+                self.update_interval
+            );
+        }
+
+        // Validate interface configurations
+        for (name, iface_config) in &self.interfaces {
+            // Loopback cannot be configured (it's always trusted)
+            if name == "lo" {
+                anyhow::bail!("Interface 'lo' cannot be configured - it is always trusted");
+            }
+
+            // WAN mode requires blocklist_preset
+            if iface_config.mode == InterfaceMode::Wan && iface_config.blocklist_preset.is_none() {
+                anyhow::bail!(
+                    "Interface '{}' is in WAN mode but has no blocklist_preset",
+                    name
+                );
+            }
+
+            // LAN mode should have outbound_monitor for detection
+            if iface_config.mode == InterfaceMode::Lan && iface_config.outbound_monitor.is_none() {
+                tracing::warn!(
+                    "Interface '{}' is in LAN mode without outbound_monitor - no compromise detection",
+                    name
+                );
+            }
+
+            // Validate preset names
+            if let Some(ref preset) = iface_config.blocklist_preset {
+                if !VALID_PRESETS.contains(&preset.as_str()) {
+                    anyhow::bail!(
+                        "Invalid blocklist_preset '{}' for interface '{}'. Valid values: {}",
+                        preset,
+                        name,
+                        VALID_PRESETS.join(", ")
+                    );
+                }
+            }
+        }
+
+        // Validate webhook URL uses HTTPS if enabled
+        if self.alerts.webhook.enabled
+            && !self.alerts.webhook.url.is_empty()
+            && !self.alerts.webhook.url.starts_with("https://")
+        {
+            anyhow::bail!("Webhook URL must use HTTPS: {}", self.alerts.webhook.url);
+        }
+
+        // Validate Gotify URL uses HTTPS if enabled
+        if self.alerts.gotify.enabled
+            && !self.alerts.gotify.url.is_empty()
+            && !self.alerts.gotify.url.starts_with("https://")
+        {
+            anyhow::bail!("Gotify URL must use HTTPS: {}", self.alerts.gotify.url);
+        }
+
+        Ok(())
+    }
+
+    /// Get all WAN interfaces
+    pub fn get_wan_interfaces(&self) -> Vec<(&String, &InterfaceConfig)> {
+        self.interfaces
+            .iter()
+            .filter(|(_, c)| c.mode == InterfaceMode::Wan)
+            .collect()
+    }
+
+    /// Get all LAN interfaces
+    pub fn get_lan_interfaces(&self) -> Vec<(&String, &InterfaceConfig)> {
+        self.interfaces
+            .iter()
+            .filter(|(_, c)| c.mode == InterfaceMode::Lan)
+            .collect()
+    }
+
+    /// Get all trusted interfaces
+    pub fn get_trusted_interfaces(&self) -> Vec<(&String, &InterfaceConfig)> {
+        self.interfaces
+            .iter()
+            .filter(|(_, c)| c.mode == InterfaceMode::Trusted)
+            .collect()
+    }
+
+    /// Generate config from detected interfaces
+    pub fn from_detected_interfaces(
+        interfaces: &[crate::interfaces::DetectedInterface],
+    ) -> Self {
+        let mut config = Self::default();
+
+        for iface in interfaces {
+            let iface_config = match iface.suggested_mode {
+                crate::interfaces::InterfaceMode::Wan => {
+                    InterfaceConfig::wan("paranoid", Some("cdn_common"))
+                }
+                crate::interfaces::InterfaceMode::Lan => {
+                    InterfaceConfig::lan("rfc1918", "recommended", OutboundAction::Alert)
+                }
+                crate::interfaces::InterfaceMode::Trusted => {
+                    InterfaceConfig::trusted()
+                }
+            };
+
+            config.interfaces.insert(iface.name.clone(), iface_config);
+        }
+
+        config
+    }
+
+    /// Generate YAML configuration with comments
+    pub fn generate_yaml_with_comments(&self) -> Result<String> {
+        // For now, just serialize. In production, we'd use a template
+        let yaml = serde_yml::to_string(self)?;
+        Ok(yaml)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,8 +821,8 @@ mod tests {
     #[test]
     fn test_serialize_deserialize() {
         let config = Config::default();
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let parsed: Config = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_yml::to_string(&config).unwrap();
+        let parsed: Config = serde_yml::from_str(&yaml).unwrap();
         assert_eq!(parsed.language, config.language);
         assert_eq!(parsed.preset, config.preset);
     }
@@ -584,7 +878,7 @@ url: "https://example.com/webhook"
 headers:
   "X-Evil": "value\r\ninjected"
 "#;
-        let result: Result<WebhookConfig, _> = serde_yaml::from_str(yaml);
+        let result: Result<WebhookConfig, _> = serde_yml::from_str(yaml);
         assert!(result.is_err());
     }
 
@@ -596,7 +890,7 @@ url: "https://example.com/webhook"
 headers:
   "X-Header:Invalid": "value"
 "#;
-        let result: Result<WebhookConfig, _> = serde_yaml::from_str(yaml);
+        let result: Result<WebhookConfig, _> = serde_yml::from_str(yaml);
         assert!(result.is_err());
     }
 
@@ -609,7 +903,7 @@ headers:
   "X-Custom-Header": "some-value"
   "Authorization": "Bearer token"
 "#;
-        let result: Result<WebhookConfig, _> = serde_yaml::from_str(yaml);
+        let result: Result<WebhookConfig, _> = serde_yml::from_str(yaml);
         assert!(result.is_ok());
         let config = result.unwrap();
         assert_eq!(config.headers.len(), 2);

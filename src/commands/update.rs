@@ -1,4 +1,10 @@
 //! Update command implementation.
+//!
+//! Supports multiple update targets:
+//! - `presets`: Reload presets.yaml definitions
+//! - `lists`: Download blocklists and allowlists from URLs
+//! - `config`: Reload config.yaml and apply firewall rules
+//! - (default): Full update (all of the above)
 
 use anyhow::{Context, Result};
 use ipnet::IpNet;
@@ -7,11 +13,13 @@ use tracing::{error, info, warn};
 
 use crate::aggregator::{aggregate, count_ips, subtract_allowlist};
 use crate::alerts::{AlertManager, AlertTypes};
+use crate::cli::UpdateTarget;
 use crate::config::Config;
 use crate::dns::resolve_ptr;
 use crate::enforcer::{check_root, create_backend};
 use crate::fetcher::Fetcher;
 use crate::lock::LockGuard;
+use crate::presets::PresetsConfig;
 use crate::signal::is_shutdown_requested;
 use crate::stats::OustipState;
 use crate::utils::format_count;
@@ -57,8 +65,108 @@ fn check_disk_space() -> Result<()> {
     Ok(())
 }
 
-/// Run the update command
-pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> Result<()> {
+/// Run the update command with target selection
+pub async fn run(target: Option<UpdateTarget>, dry_run: bool, config_path: &Path) -> Result<()> {
+    match target {
+        Some(UpdateTarget::Presets) => run_update_presets().await,
+        Some(UpdateTarget::Lists) => run_update_lists(dry_run, config_path).await,
+        Some(UpdateTarget::Config) => run_update_config(dry_run, config_path).await,
+        None => run_full_update(dry_run, config_path).await,
+    }
+}
+
+/// Update presets: reload presets.yaml definitions
+async fn run_update_presets() -> Result<()> {
+    info!("Reloading presets configuration...");
+
+    // Load and validate presets
+    let presets = PresetsConfig::load_or_default()?;
+
+    // List resolved presets
+    println!();
+    println!("[OK] Presets loaded successfully");
+    println!();
+    println!("Blocklist presets:");
+    for name in presets.list_blocklist_presets() {
+        let sources = presets.resolve_blocklist_preset(name)?;
+        println!("  {} ({} sources)", name, sources.len());
+    }
+    println!();
+    println!("Allowlist presets:");
+    for name in presets.list_allowlist_presets() {
+        let sources = presets.resolve_allowlist_preset(name)?;
+        println!("  {} ({} sources)", name, sources.len());
+    }
+    println!();
+    println!("To download lists, run: oustip update lists");
+    println!("To apply firewall rules, run: oustip update config");
+
+    Ok(())
+}
+
+/// Update lists: download blocklists and allowlists from URLs
+async fn run_update_lists(dry_run: bool, config_path: &Path) -> Result<()> {
+    // Load config
+    let config = Config::load(config_path)
+        .with_context(|| format!("Failed to load config from {:?}", config_path))?;
+
+    rust_i18n::set_locale(&config.language);
+
+    if dry_run {
+        info!("DRY-RUN: Fetching lists (no state changes)...");
+    } else {
+        info!("Downloading blocklists and allowlists...");
+    }
+
+    let fetcher = Fetcher::new()?;
+
+    // Get enabled blocklists from preset
+    let enabled_lists = config.get_enabled_blocklists(None);
+
+    if enabled_lists.is_empty() {
+        warn!("No blocklists enabled. Check your configuration.");
+        return Ok(());
+    }
+
+    // Fetch blocklists
+    let results = fetcher.fetch_blocklists(&enabled_lists).await;
+
+    let mut success_count = 0;
+    let mut error_count = 0;
+
+    for result in &results {
+        match result {
+            Ok(fetch_result) => {
+                info!("  ✓ {} ({} IPs)", fetch_result.name, fetch_result.raw_count);
+                success_count += 1;
+            }
+            Err(e) => {
+                error!("  ✗ Error: {}", e);
+                error_count += 1;
+            }
+        }
+    }
+
+    // Fetch auto-allowlists
+    let auto_allowlist = fetcher.fetch_auto_allowlist(&config.auto_allowlist).await?;
+    info!("Auto-allowlist: {} IPs from CDN providers", auto_allowlist.len());
+
+    println!();
+    println!("[OK] Lists downloaded: {} success, {} errors", success_count, error_count);
+    println!();
+    println!("To apply firewall rules, run: oustip update config");
+
+    Ok(())
+}
+
+/// Update config: reload config.yaml and apply firewall rules
+async fn run_update_config(dry_run: bool, config_path: &Path) -> Result<()> {
+    // This is essentially the full update, just re-applying rules from config
+    run_full_update(dry_run, config_path).await
+}
+
+/// Full update: presets + lists + config (legacy behavior)
+async fn run_full_update(dry_run: bool, config_path: &Path) -> Result<()> {
     // Skip root check in dry-run mode (no firewall changes)
     if !dry_run {
         check_root()?;
@@ -94,8 +202,7 @@ pub async fn run(preset: Option<String>, dry_run: bool, config_path: &Path) -> R
     let backend = create_backend(config.backend)?;
 
     // Get enabled blocklists
-    let preset_ref = preset.as_deref();
-    let enabled_lists = config.get_enabled_blocklists(preset_ref);
+    let enabled_lists = config.get_enabled_blocklists(None);
 
     if enabled_lists.is_empty() {
         warn!("No blocklists enabled. Check your configuration.");
