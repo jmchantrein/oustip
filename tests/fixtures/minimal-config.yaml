@@ -1,9 +1,10 @@
 language: en
-backend: auto
+backend: nftables
 mode: conntrack
 preset: minimal
 
-blocklists: []
+# Use preset sources (spamhaus, dshield)
+# Don't override with empty blocklists
 
 allowlist:
   - 127.0.0.1
