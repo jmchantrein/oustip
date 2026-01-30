@@ -117,6 +117,7 @@ pub mod dns;
 pub mod enforcer;
 pub mod fetcher;
 pub mod installer;
+pub mod interface_stats;
 pub mod interfaces;
 pub mod lock;
 pub mod presets;

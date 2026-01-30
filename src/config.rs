@@ -666,6 +666,16 @@ impl ConfigV2 {
         Ok(config)
     }
 
+    /// Load configuration and validate preset references against presets.yaml
+    pub fn load_and_validate_presets<P: AsRef<Path>>(
+        config_path: P,
+        presets: &crate::presets::PresetsConfig,
+    ) -> Result<Self> {
+        let config = Self::load(config_path)?;
+        config.validate_preset_references(presets)?;
+        Ok(config)
+    }
+
     /// Validate configuration
     pub fn validate(&self) -> Result<()> {
         // Validate update interval
@@ -699,14 +709,23 @@ impl ConfigV2 {
                 );
             }
 
-            // Validate preset names
+            // Basic preset name validation (format only)
+            // Full validation against presets.yaml is done in validate_preset_references
             if let Some(ref preset) = iface_config.blocklist_preset {
-                if !VALID_PRESETS.contains(&preset.as_str()) {
+                if preset.is_empty() || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
                     anyhow::bail!(
-                        "Invalid blocklist_preset '{}' for interface '{}'. Valid values: {}",
+                        "Invalid blocklist_preset name '{}' for interface '{}'. Use alphanumeric, underscore or hyphen only.",
                         preset,
-                        name,
-                        VALID_PRESETS.join(", ")
+                        name
+                    );
+                }
+            }
+            if let Some(ref preset) = iface_config.allowlist_preset {
+                if preset.is_empty() || preset.contains(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
+                    anyhow::bail!(
+                        "Invalid allowlist_preset name '{}' for interface '{}'. Use alphanumeric, underscore or hyphen only.",
+                        preset,
+                        name
                     );
                 }
             }
@@ -726,6 +745,66 @@ impl ConfigV2 {
             && !self.alerts.gotify.url.starts_with("https://")
         {
             anyhow::bail!("Gotify URL must use HTTPS: {}", self.alerts.gotify.url);
+        }
+
+        Ok(())
+    }
+
+    /// Validate that preset references in config.yaml exist in presets.yaml
+    ///
+    /// This validates:
+    /// - blocklist_preset names reference existing blocklist presets
+    /// - allowlist_preset names reference existing allowlist presets
+    /// - outbound_monitor.blocklist_preset names reference existing blocklist presets
+    pub fn validate_preset_references(
+        &self,
+        presets: &crate::presets::PresetsConfig,
+    ) -> Result<()> {
+        let blocklist_presets = presets.list_blocklist_presets();
+        let allowlist_presets = presets.list_allowlist_presets();
+
+        for (iface_name, iface_config) in &self.interfaces {
+            // Validate blocklist_preset
+            if let Some(ref preset) = iface_config.blocklist_preset {
+                if !blocklist_presets.iter().any(|p| p.as_str() == preset) {
+                    let available: Vec<&str> = blocklist_presets.iter().map(|s| s.as_str()).collect();
+                    anyhow::bail!(
+                        "Interface '{}': blocklist_preset '{}' not found in presets.yaml.\n\
+                         Available blocklist presets: {}",
+                        iface_name,
+                        preset,
+                        available.join(", ")
+                    );
+                }
+            }
+
+            // Validate allowlist_preset
+            if let Some(ref preset) = iface_config.allowlist_preset {
+                if !allowlist_presets.iter().any(|p| p.as_str() == preset) {
+                    let available: Vec<&str> = allowlist_presets.iter().map(|s| s.as_str()).collect();
+                    anyhow::bail!(
+                        "Interface '{}': allowlist_preset '{}' not found in presets.yaml.\n\
+                         Available allowlist presets: {}",
+                        iface_name,
+                        preset,
+                        available.join(", ")
+                    );
+                }
+            }
+
+            // Validate outbound_monitor.blocklist_preset
+            if let Some(ref monitor) = iface_config.outbound_monitor {
+                if !blocklist_presets.iter().any(|p| p.as_str() == monitor.blocklist_preset) {
+                    let available: Vec<&str> = blocklist_presets.iter().map(|s| s.as_str()).collect();
+                    anyhow::bail!(
+                        "Interface '{}': outbound_monitor.blocklist_preset '{}' not found in presets.yaml.\n\
+                         Available blocklist presets: {}",
+                        iface_name,
+                        monitor.blocklist_preset,
+                        available.join(", ")
+                    );
+                }
+            }
         }
 
         Ok(())

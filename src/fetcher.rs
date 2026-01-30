@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use ipnet::IpNet;
 use reqwest::Client;
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,6 +12,7 @@ use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use crate::config::{AutoAllowlist, BlocklistSource};
+use crate::presets::AllowlistSourceDef;
 use crate::utils::format_count;
 
 const TIMEOUT_SECS: u64 = 30;
@@ -157,6 +159,142 @@ impl Fetcher {
         }
 
         Ok(ips)
+    }
+
+    /// Fetch allowlist from a source definition (presets.yaml)
+    ///
+    /// Handles both static (inline ranges) and dynamic (URL-based) sources.
+    /// For dynamic sources with json_path, extracts IPs from the specified JSON path.
+    pub async fn fetch_allowlist_source(
+        &self,
+        name: &str,
+        source: &AllowlistSourceDef,
+    ) -> Result<Vec<IpNet>> {
+        match source {
+            AllowlistSourceDef::Static { ranges, .. } => {
+                // Parse static ranges
+                let ips: Vec<IpNet> = ranges
+                    .iter()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                info!("Loaded {} static ranges from {}", ips.len(), name);
+                Ok(ips)
+            }
+            AllowlistSourceDef::Dynamic {
+                url,
+                url_v6,
+                json_path,
+                ..
+            } => {
+                let mut all_ips = Vec::new();
+
+                // Fetch IPv4
+                match self.fetch_dynamic_allowlist(url, json_path.as_deref()).await {
+                    Ok(ips) => {
+                        info!("Fetched {} IPv4 ranges from {}", ips.len(), name);
+                        all_ips.extend(ips);
+                    }
+                    Err(e) => {
+                        warn!("Failed to fetch {} IPv4: {}", name, e);
+                    }
+                }
+
+                // Fetch IPv6 if URL provided
+                if let Some(v6_url) = url_v6 {
+                    match self.fetch_dynamic_allowlist(v6_url, json_path.as_deref()).await {
+                        Ok(ips) => {
+                            info!("Fetched {} IPv6 ranges from {}", ips.len(), name);
+                            all_ips.extend(ips);
+                        }
+                        Err(e) => {
+                            warn!("Failed to fetch {} IPv6: {}", name, e);
+                        }
+                    }
+                }
+
+                Ok(all_ips)
+            }
+        }
+    }
+
+    /// Fetch dynamic allowlist from URL with optional JSON path extraction
+    async fn fetch_dynamic_allowlist(
+        &self,
+        url: &str,
+        json_path: Option<&str>,
+    ) -> Result<Vec<IpNet>> {
+        let content = self.fetch_with_retry(url).await?;
+
+        if let Some(path) = json_path {
+            // JSON response - extract IPs from specified path
+            self.parse_json_ip_list(&content, path)
+        } else {
+            // Plain text response - one IP/CIDR per line
+            Ok(parse_simple_list(&content))
+        }
+    }
+
+    /// Parse JSON response and extract IPs from specified path
+    ///
+    /// Supports paths like:
+    /// - "hooks" -> extracts from root.hooks array
+    /// - "prefixes.ipv4Prefix" -> extracts from root.prefixes[].ipv4Prefix
+    /// - "addresses" -> extracts from root.addresses array
+    fn parse_json_ip_list(&self, content: &str, path: &str) -> Result<Vec<IpNet>> {
+        let json: Value = serde_json::from_str(content)
+            .context("Failed to parse JSON response")?;
+
+        let mut ips = Vec::new();
+
+        // Split path for nested access
+        let parts: Vec<&str> = path.split('.').collect();
+
+        // Get the target array
+        let target = self.get_json_path(&json, &parts)?;
+
+        // Extract IPs from array
+        if let Some(arr) = target.as_array() {
+            for item in arr {
+                if let Some(ip_str) = item.as_str() {
+                    if let Ok(net) = ip_str.parse::<IpNet>() {
+                        ips.push(net);
+                    }
+                } else if let Some(obj) = item.as_object() {
+                    // Handle nested objects like { "ipv4Prefix": "1.2.3.0/24" }
+                    for value in obj.values() {
+                        if let Some(ip_str) = value.as_str() {
+                            if let Ok(net) = ip_str.parse::<IpNet>() {
+                                ips.push(net);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(ips)
+    }
+
+    /// Navigate JSON structure by path
+    fn get_json_path<'a>(&self, json: &'a Value, parts: &[&str]) -> Result<&'a Value> {
+        let mut current = json;
+
+        for part in parts {
+            if let Some(obj) = current.as_object() {
+                current = obj.get(*part).ok_or_else(|| {
+                    anyhow::anyhow!("JSON path '{}' not found", part)
+                })?;
+            } else if current.as_array().is_some() {
+                // If we're at an array and there's more path, map over items
+                // This handles cases like prefixes[].ipv4Prefix
+                // For now, just return the array itself
+                return Ok(current);
+            } else {
+                anyhow::bail!("Cannot navigate into non-object/array at '{}'", part);
+            }
+        }
+
+        Ok(current)
     }
 
     /// Fetch content with retry logic and size validation
