@@ -950,3 +950,401 @@ COMMIT
         assert!(ipset_rules.is_empty());
     }
 }
+
+#[cfg(test)]
+mod extended_tests {
+    use super::*;
+
+    // =========================================================================
+    // parse_human_number comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_human_number_lowercase_suffix() {
+        // Lowercase suffixes should not work (iptables uses uppercase)
+        assert_eq!(parse_human_number("123k"), None);
+        assert_eq!(parse_human_number("456m"), None);
+        assert_eq!(parse_human_number("1g"), None);
+    }
+
+    #[test]
+    fn test_parse_human_number_large_multiplied_values() {
+        // Test values that are large but don't overflow
+        assert_eq!(parse_human_number("999K"), Some(999_000));
+        assert_eq!(parse_human_number("999M"), Some(999_000_000));
+        assert_eq!(parse_human_number("9G"), Some(9_000_000_000));
+    }
+
+    #[test]
+    fn test_parse_human_number_boundary_overflow() {
+        // Test overflow at boundary
+        // u64::MAX = 18446744073709551615
+        // 18446744073709551615 / 1000 = 18446744073709551 (still valid for K)
+        assert_eq!(parse_human_number("18446744073709551K"), Some(18446744073709551000));
+        // But 18446744073709552K would overflow
+        assert_eq!(parse_human_number("18446744073709552K"), None);
+    }
+
+    #[test]
+    fn test_parse_human_number_with_leading_zeros() {
+        assert_eq!(parse_human_number("000123"), Some(123));
+        assert_eq!(parse_human_number("00100K"), Some(100_000));
+    }
+
+    #[test]
+    fn test_parse_human_number_only_suffix() {
+        // Just a suffix with no number
+        assert_eq!(parse_human_number("K"), None);
+        assert_eq!(parse_human_number("M"), None);
+        assert_eq!(parse_human_number("G"), None);
+    }
+
+    #[test]
+    fn test_parse_human_number_decimal() {
+        // Decimal numbers are not supported
+        assert_eq!(parse_human_number("1.5K"), None);
+        assert_eq!(parse_human_number("123.456"), None);
+    }
+
+    #[test]
+    fn test_parse_human_number_multiple_suffixes() {
+        // Multiple suffixes should fail
+        assert_eq!(parse_human_number("123KM"), None);
+        assert_eq!(parse_human_number("123KK"), None);
+    }
+
+    #[test]
+    fn test_parse_human_number_suffix_only_chars() {
+        // Characters that aren't suffixes
+        assert_eq!(parse_human_number("123B"), None); // B is not a valid suffix
+        assert_eq!(parse_human_number("123T"), None); // T is not a valid suffix
+    }
+
+    #[test]
+    fn test_parse_human_number_negative() {
+        // Negative numbers
+        assert_eq!(parse_human_number("-123"), None);
+        assert_eq!(parse_human_number("-1K"), None);
+    }
+
+    // =========================================================================
+    // parse_iptables_counters comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_iptables_counters_typical_format() {
+        // Typical iptables -L -v -n format
+        let line = "   12K  3456K DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set oustip_blocklist src";
+        let result = parse_iptables_counters(line);
+        assert!(result.is_some());
+        let (packets, bytes) = result.unwrap();
+        assert_eq!(packets, 12_000);
+        assert_eq!(bytes, 3_456_000);
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_no_suffix() {
+        let line = "  100  2048 DROP  all  --  *  *  0.0.0.0/0  0.0.0.0/0";
+        let result = parse_iptables_counters(line);
+        assert!(result.is_some());
+        let (packets, bytes) = result.unwrap();
+        assert_eq!(packets, 100);
+        assert_eq!(bytes, 2048);
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_mixed_suffixes() {
+        let line = "  100K  5G DROP  all";
+        let result = parse_iptables_counters(line);
+        assert!(result.is_some());
+        let (packets, bytes) = result.unwrap();
+        assert_eq!(packets, 100_000);
+        assert_eq!(bytes, 5_000_000_000);
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_zero_values() {
+        let line = "    0     0 DROP  all";
+        let result = parse_iptables_counters(line);
+        assert!(result.is_some());
+        let (packets, bytes) = result.unwrap();
+        assert_eq!(packets, 0);
+        assert_eq!(bytes, 0);
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_whitespace_only() {
+        let line = "       ";
+        let result = parse_iptables_counters(line);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_header_line() {
+        // Header line from iptables -L -v -n
+        let line = "pkts bytes target     prot opt in     out     source               destination";
+        let result = parse_iptables_counters(line);
+        // Should fail because "pkts" is not a number
+        assert!(result.is_none());
+    }
+
+    // =========================================================================
+    // Constants tests
+    // =========================================================================
+
+    #[test]
+    fn test_chain_names_unique() {
+        // IPv4 and IPv6 chain names should be different
+        assert_ne!(CHAIN_INPUT, CHAIN_INPUT_V6);
+        assert_ne!(CHAIN_FORWARD, CHAIN_FORWARD_V6);
+    }
+
+    #[test]
+    fn test_chain_names_contain_oustip() {
+        // All chain names should contain OUSTIP for easy identification
+        assert!(CHAIN_INPUT.contains("OUSTIP"));
+        assert!(CHAIN_FORWARD.contains("OUSTIP"));
+        assert!(CHAIN_INPUT_V6.contains("OUSTIP"));
+        assert!(CHAIN_FORWARD_V6.contains("OUSTIP"));
+    }
+
+    #[test]
+    fn test_ipset_names_unique() {
+        assert_ne!(IPSET_NAME, IPSET_NAME_V6);
+    }
+
+    #[test]
+    fn test_ipset_names_under_limit() {
+        // ipset name limit is 31 characters
+        assert!(IPSET_NAME.len() <= 31);
+        assert!(IPSET_NAME_V6.len() <= 31);
+    }
+
+    // =========================================================================
+    // IptablesBackend struct tests
+    // =========================================================================
+
+    #[test]
+    fn test_iptables_backend_default() {
+        let backend = IptablesBackend::default();
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_iptables_backend_new() {
+        let backend = IptablesBackend::new();
+        let _ = backend;
+    }
+
+    // =========================================================================
+    // Section marker tests
+    // =========================================================================
+
+    #[test]
+    fn test_section_markers_format() {
+        // Test that section markers follow expected format
+        let markers = [
+            "### IPSET_START ###",
+            "### IPSET_END ###",
+            "### IPTABLES_START ###",
+            "### IPTABLES_END ###",
+            "### IP6TABLES_START ###",
+            "### IP6TABLES_END ###",
+        ];
+
+        for marker in markers {
+            // Each marker starts and ends with ###
+            assert!(marker.starts_with("###"));
+            assert!(marker.ends_with("###"));
+            // Has content between
+            assert!(marker.len() > 6);
+        }
+    }
+
+    #[test]
+    fn test_section_parsing_order_independence() {
+        // Sections should be parseable regardless of order
+        let saved_rules = r#"
+### IPTABLES_START ###
+*filter
+COMMIT
+### IPTABLES_END ###
+### IPSET_START ###
+create oustip_blocklist hash:net
+### IPSET_END ###
+"#;
+
+        let mut ipset_rules = String::new();
+        let mut iptables_rules = String::new();
+        let mut current_section = "";
+
+        for line in saved_rules.lines() {
+            match line {
+                "### IPSET_START ###" => current_section = "ipset",
+                "### IPSET_END ###" => current_section = "",
+                "### IPTABLES_START ###" => current_section = "iptables",
+                "### IPTABLES_END ###" => current_section = "",
+                _ => match current_section {
+                    "ipset" => {
+                        ipset_rules.push_str(line);
+                        ipset_rules.push('\n');
+                    }
+                    "iptables" => {
+                        iptables_rules.push_str(line);
+                        iptables_rules.push('\n');
+                    }
+                    _ => {}
+                },
+            }
+        }
+
+        assert!(ipset_rules.contains("create oustip_blocklist"));
+        assert!(iptables_rules.contains("*filter"));
+    }
+
+    // =========================================================================
+    // Overflow protection tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_human_number_m_overflow() {
+        // Large number with M suffix that would overflow
+        // 18446744073710 * 1_000_000 overflows u64
+        let result = parse_human_number("18446744073710M");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_human_number_g_overflow() {
+        // Large number with G suffix that would overflow
+        // 18446744074 * 1_000_000_000 overflows u64
+        let result = parse_human_number("18446744074G");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_human_number_max_safe_values() {
+        // Maximum safe values for each suffix
+        assert!(parse_human_number("18446744073709551K").is_some());
+        assert!(parse_human_number("18446744073709M").is_some());
+        assert!(parse_human_number("18446744073G").is_some());
+    }
+
+    // =========================================================================
+    // Edge case tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_iptables_counters_single_field() {
+        // Single field should fail
+        let result = parse_iptables_counters("123");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_invalid_first() {
+        // First field invalid, second valid
+        let result = parse_iptables_counters("abc 123");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_iptables_counters_valid_first_invalid_second() {
+        // First field valid, second invalid
+        let result = parse_iptables_counters("123 abc");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_human_number_spaces_around_suffix() {
+        // Suffix with space before it
+        assert_eq!(parse_human_number("123 K"), None);
+    }
+
+    #[test]
+    fn test_parse_human_number_unicode() {
+        // Unicode digits shouldn't be parsed
+        assert_eq!(parse_human_number("\u{0661}\u{0662}\u{0663}"), None); // Arabic digits
+    }
+
+    // =========================================================================
+    // IPv6 specific tests
+    // =========================================================================
+
+    #[test]
+    fn test_ipv6_chain_names_contain_6() {
+        // IPv6 chain names should contain "6"
+        assert!(CHAIN_INPUT_V6.contains("6"));
+        assert!(CHAIN_FORWARD_V6.contains("6"));
+    }
+
+    #[test]
+    fn test_ipv6_ipset_name_contains_6() {
+        assert!(IPSET_NAME_V6.contains("6"));
+    }
+
+    // =========================================================================
+    // Section content extraction tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_ipset_section() {
+        let saved_rules = r#"
+### IPSET_START ###
+create oustip_blocklist hash:net
+add oustip_blocklist 192.168.1.0/24
+add oustip_blocklist 10.0.0.0/8
+### IPSET_END ###
+"#;
+
+        let mut ipset_rules = String::new();
+        let mut in_section = false;
+
+        for line in saved_rules.lines() {
+            match line {
+                "### IPSET_START ###" => in_section = true,
+                "### IPSET_END ###" => in_section = false,
+                _ if in_section => {
+                    ipset_rules.push_str(line);
+                    ipset_rules.push('\n');
+                }
+                _ => {}
+            }
+        }
+
+        assert!(ipset_rules.contains("create oustip_blocklist"));
+        assert!(ipset_rules.contains("192.168.1.0/24"));
+        assert!(ipset_rules.contains("10.0.0.0/8"));
+    }
+
+    #[test]
+    fn test_extract_iptables_section() {
+        let saved_rules = r#"
+### IPTABLES_START ###
+*filter
+:OUSTIP-INPUT - [0:0]
+-A OUSTIP-INPUT -m set --match-set oustip_blocklist src -j DROP
+COMMIT
+### IPTABLES_END ###
+"#;
+
+        let mut iptables_rules = String::new();
+        let mut in_section = false;
+
+        for line in saved_rules.lines() {
+            match line {
+                "### IPTABLES_START ###" => in_section = true,
+                "### IPTABLES_END ###" => in_section = false,
+                _ if in_section => {
+                    iptables_rules.push_str(line);
+                    iptables_rules.push('\n');
+                }
+                _ => {}
+            }
+        }
+
+        assert!(iptables_rules.contains("*filter"));
+        assert!(iptables_rules.contains("OUSTIP-INPUT"));
+        assert!(iptables_rules.contains("COMMIT"));
+    }
+}

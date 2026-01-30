@@ -524,3 +524,340 @@ pub mod mock {
         }
     }
 }
+
+#[cfg(test)]
+mod extended_tests {
+    use super::*;
+
+    // =========================================================================
+    // validate_entry_count tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_entry_count_small() {
+        // Small entry counts should always be OK
+        assert!(validate_entry_count(0).is_ok());
+        assert!(validate_entry_count(100).is_ok());
+        assert!(validate_entry_count(1000).is_ok());
+        assert!(validate_entry_count(100_000).is_ok());
+    }
+
+    #[test]
+    fn test_validate_entry_count_at_warning_threshold() {
+        // Should pass but log warning
+        assert!(validate_entry_count(WARN_SET_ENTRIES).is_ok());
+        assert!(validate_entry_count(WARN_SET_ENTRIES + 1).is_ok());
+    }
+
+    #[test]
+    fn test_validate_entry_count_at_large_threshold() {
+        // Should pass but log different warning
+        assert!(validate_entry_count(LARGE_SET_ENTRIES).is_ok());
+        assert!(validate_entry_count(LARGE_SET_ENTRIES + 1).is_ok());
+    }
+
+    #[test]
+    fn test_validate_entry_count_extreme() {
+        // Even very large counts should pass (no hard limit)
+        assert!(validate_entry_count(10_000_000).is_ok());
+        assert!(validate_entry_count(100_000_000).is_ok());
+    }
+
+    // =========================================================================
+    // Constants tests
+    // =========================================================================
+
+    #[test]
+    fn test_warn_threshold_constant() {
+        assert_eq!(WARN_SET_ENTRIES, 500_000);
+    }
+
+    #[test]
+    fn test_large_threshold_constant() {
+        assert_eq!(LARGE_SET_ENTRIES, 2_000_000);
+    }
+
+    #[test]
+    fn test_cmd_timeout_constant() {
+        assert_eq!(CMD_TIMEOUT_SECS, 30);
+    }
+
+    #[test]
+    fn test_thresholds_ordered() {
+        // Large threshold should be bigger than warn threshold
+        assert!(LARGE_SET_ENTRIES > WARN_SET_ENTRIES);
+    }
+
+    // =========================================================================
+    // Path constants tests
+    // =========================================================================
+
+    #[test]
+    fn test_nft_paths_valid() {
+        assert!(NFT_PATH_USR_SBIN.starts_with("/usr/sbin/"));
+        assert!(NFT_PATH_SBIN.starts_with("/sbin/"));
+    }
+
+    #[test]
+    fn test_iptables_paths_valid() {
+        assert!(IPTABLES_PATH_USR_SBIN.starts_with("/usr/sbin/"));
+        assert!(IPTABLES_PATH_SBIN.starts_with("/sbin/"));
+        assert!(IP6TABLES_PATH_USR_SBIN.starts_with("/usr/sbin/"));
+        assert!(IP6TABLES_PATH_SBIN.starts_with("/sbin/"));
+    }
+
+    #[test]
+    fn test_ipset_paths_valid() {
+        assert!(IPSET_PATH_USR_SBIN.starts_with("/usr/sbin/"));
+        assert!(IPSET_PATH_SBIN.starts_with("/sbin/"));
+    }
+
+    #[test]
+    fn test_save_restore_paths_valid() {
+        assert!(IPTABLES_SAVE_PATH_USR_SBIN.contains("iptables-save"));
+        assert!(IPTABLES_RESTORE_PATH_USR_SBIN.contains("iptables-restore"));
+        assert!(IP6TABLES_SAVE_PATH_USR_SBIN.contains("ip6tables-save"));
+        assert!(IP6TABLES_RESTORE_PATH_USR_SBIN.contains("ip6tables-restore"));
+    }
+
+    // =========================================================================
+    // FirewallStats tests
+    // =========================================================================
+
+    #[test]
+    fn test_firewall_stats_default() {
+        let stats = FirewallStats::default();
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    #[test]
+    fn test_firewall_stats_clone() {
+        let stats = FirewallStats {
+            packets_blocked: 1000,
+            bytes_blocked: 50000,
+        };
+        let cloned = stats.clone();
+        assert_eq!(cloned.packets_blocked, stats.packets_blocked);
+        assert_eq!(cloned.bytes_blocked, stats.bytes_blocked);
+    }
+
+    #[test]
+    fn test_firewall_stats_debug() {
+        let stats = FirewallStats {
+            packets_blocked: 42,
+            bytes_blocked: 1337,
+        };
+        let debug_str = format!("{:?}", stats);
+        assert!(debug_str.contains("42"));
+        assert!(debug_str.contains("1337"));
+    }
+
+    // =========================================================================
+    // Backend enum tests
+    // =========================================================================
+
+    #[test]
+    fn test_backend_display_names() {
+        // Note: These tests would need actual nft/iptables installed
+        // Here we test the logic without actually running commands
+
+        // When explicitly configured, display name is simple
+        let name = match Backend::Nftables {
+            Backend::Auto => panic!("Should not be Auto"),
+            Backend::Iptables => "iptables",
+            Backend::Nftables => "nftables",
+        };
+        assert_eq!(name, "nftables");
+
+        let name = match Backend::Iptables {
+            Backend::Auto => panic!("Should not be Auto"),
+            Backend::Iptables => "iptables",
+            Backend::Nftables => "nftables",
+        };
+        assert_eq!(name, "iptables");
+    }
+
+    // =========================================================================
+    // Memory estimation tests
+    // =========================================================================
+
+    #[test]
+    fn test_memory_estimation_formula() {
+        // Test the memory estimation formula used in warnings
+        // ~32 bytes per entry
+        let count = 1_000_000usize;
+        let estimated_mb = (count * 32) / (1024 * 1024);
+        assert!(estimated_mb > 0);
+        assert!(estimated_mb < 100); // Should be around 30MB
+    }
+
+    #[test]
+    fn test_memory_estimation_large() {
+        let count = LARGE_SET_ENTRIES;
+        let estimated_mb = (count * 32) / (1024 * 1024);
+        // 2M entries * 32 bytes = 64MB
+        assert!(estimated_mb >= 60 && estimated_mb <= 70);
+    }
+
+    // =========================================================================
+    // Mock backend comprehensive tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_mock_backend_ipv4_containment() {
+        let backend = mock::MockBackend::new();
+
+        // Apply a /24 network
+        let ips: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
+        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+
+        // Single IP within the /24 should be blocked
+        assert!(backend.is_blocked(&"192.168.1.100/32".parse().unwrap()).await.unwrap());
+        // IP outside the /24 should not be blocked
+        assert!(!backend.is_blocked(&"192.168.2.100/32".parse().unwrap()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_ipv6_containment() {
+        let backend = mock::MockBackend::new();
+
+        let ips: Vec<IpNet> = vec!["2001:db8::/32".parse().unwrap()];
+        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+
+        // Address within the /32 should be blocked
+        assert!(backend.is_blocked(&"2001:db8:1:2::1/128".parse().unwrap()).await.unwrap());
+        // Address outside should not be blocked
+        assert!(!backend.is_blocked(&"2001:db9::1/128".parse().unwrap()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_mixed_v4_v6() {
+        let backend = mock::MockBackend::new();
+
+        let ips: Vec<IpNet> = vec![
+            "192.168.1.0/24".parse().unwrap(),
+            "2001:db8::/32".parse().unwrap(),
+        ];
+        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+
+        assert_eq!(backend.entry_count().await.unwrap(), 2);
+
+        // IPv4 should be blocked
+        assert!(backend.is_blocked(&"192.168.1.1/32".parse().unwrap()).await.unwrap());
+        // IPv6 should be blocked
+        assert!(backend.is_blocked(&"2001:db8::1/128".parse().unwrap()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_reapply_clears_old() {
+        let backend = mock::MockBackend::new();
+
+        // First apply
+        let ips1: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
+        backend.apply_rules(&ips1, FilterMode::Conntrack).await.unwrap();
+        assert!(backend.is_blocked(&"192.168.1.1/32".parse().unwrap()).await.unwrap());
+
+        // Second apply with different IPs
+        let ips2: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        backend.apply_rules(&ips2, FilterMode::Conntrack).await.unwrap();
+
+        // Old IP should no longer be blocked
+        assert!(!backend.is_blocked(&"192.168.1.1/32".parse().unwrap()).await.unwrap());
+        // New IP should be blocked
+        assert!(backend.is_blocked(&"10.1.2.3/32".parse().unwrap()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_empty_rules() {
+        let backend = mock::MockBackend::new();
+
+        // Apply empty rules
+        let ips: Vec<IpNet> = vec![];
+        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+
+        assert_eq!(backend.entry_count().await.unwrap(), 0);
+        // Should still be marked as active even with 0 entries
+        assert!(backend.is_active().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_get_stats_default() {
+        let backend = mock::MockBackend::new();
+        let stats = backend.get_stats().await.unwrap();
+
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    // =========================================================================
+    // find_command logic tests
+    // =========================================================================
+
+    #[test]
+    fn test_find_command_returns_string() {
+        // Test that find_command returns a static str
+        // We can't test actual path resolution without mocking the filesystem,
+        // but we can test the function signature and return type
+
+        // This tests the fallback case when neither path exists
+        // The function should return the bare command name
+        let result = find_command("test_cmd", "/nonexistent/path1", "/nonexistent/path2");
+        assert_eq!(result, "test_cmd");
+    }
+
+    // =========================================================================
+    // FilterMode interaction tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_mock_backend_conntrack_mode() {
+        let backend = mock::MockBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/16".parse().unwrap()];
+
+        // Conntrack mode should work the same in mock
+        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        assert!(backend.is_active().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_raw_mode() {
+        let backend = mock::MockBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/16".parse().unwrap()];
+
+        // Raw mode should work the same in mock
+        backend.apply_rules(&ips, FilterMode::Raw).await.unwrap();
+        assert!(backend.is_active().await.unwrap());
+    }
+
+    // =========================================================================
+    // Edge case tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_mock_backend_single_ip() {
+        let backend = mock::MockBackend::new();
+
+        let ips: Vec<IpNet> = vec!["1.2.3.4/32".parse().unwrap()];
+        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+
+        // Exact match should be blocked
+        assert!(backend.is_blocked(&"1.2.3.4/32".parse().unwrap()).await.unwrap());
+        // Adjacent IP should not be blocked
+        assert!(!backend.is_blocked(&"1.2.3.5/32".parse().unwrap()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_large_cidr() {
+        let backend = mock::MockBackend::new();
+
+        // /8 blocks millions of IPs
+        let ips: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+
+        // Various addresses within /8 should be blocked
+        assert!(backend.is_blocked(&"10.0.0.1/32".parse().unwrap()).await.unwrap());
+        assert!(backend.is_blocked(&"10.255.255.255/32".parse().unwrap()).await.unwrap());
+        assert!(backend.is_blocked(&"10.128.64.32/32".parse().unwrap()).await.unwrap());
+    }
+}

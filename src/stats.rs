@@ -820,3 +820,409 @@ mod tests {
         assert!(state.last_preset.is_none());
     }
 }
+
+#[cfg(test)]
+mod extended_tests {
+    use super::*;
+    use chrono::Duration;
+
+    // =========================================================================
+    // format_duration_ago comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_format_duration_ago_seconds_boundary() {
+        // 59 seconds should still be "just now"
+        let past = Utc::now() - Duration::seconds(59);
+        assert_eq!(format_duration_ago(past), "just now");
+
+        // 60 seconds should be "1m ago"
+        let past = Utc::now() - Duration::seconds(60);
+        assert_eq!(format_duration_ago(past), "1m ago");
+    }
+
+    #[test]
+    fn test_format_duration_ago_minutes_boundary() {
+        // 59 minutes should still be in minutes
+        let past = Utc::now() - Duration::minutes(59);
+        assert_eq!(format_duration_ago(past), "59m ago");
+
+        // 60 minutes should be "1h ago"
+        let past = Utc::now() - Duration::minutes(60);
+        assert_eq!(format_duration_ago(past), "1h ago");
+    }
+
+    #[test]
+    fn test_format_duration_ago_hours_boundary() {
+        // 23 hours should still be in hours
+        let past = Utc::now() - Duration::hours(23);
+        assert_eq!(format_duration_ago(past), "23h ago");
+
+        // 24 hours should be "1d ago"
+        let past = Utc::now() - Duration::hours(24);
+        assert_eq!(format_duration_ago(past), "1d ago");
+    }
+
+    #[test]
+    fn test_format_duration_ago_many_days() {
+        let past = Utc::now() - Duration::days(30);
+        assert_eq!(format_duration_ago(past), "30d ago");
+
+        let past = Utc::now() - Duration::days(365);
+        assert_eq!(format_duration_ago(past), "365d ago");
+    }
+
+    #[test]
+    fn test_format_duration_ago_very_old() {
+        // Very old date (years ago)
+        let past = Utc::now() - Duration::days(1000);
+        let result = format_duration_ago(past);
+        assert!(result.ends_with("d ago"));
+    }
+
+    #[test]
+    fn test_format_duration_ago_zero() {
+        // Exactly now
+        let now = Utc::now();
+        assert_eq!(format_duration_ago(now), "just now");
+    }
+
+    // =========================================================================
+    // OustipState assumed IPs tests
+    // =========================================================================
+
+    #[test]
+    fn test_assumed_ips_add_multiple() {
+        let mut state = OustipState::default();
+
+        state.add_assumed_ip("8.8.8.8");
+        state.add_assumed_ip("8.8.4.4");
+        state.add_assumed_ip("1.1.1.1");
+
+        assert_eq!(state.assumed_ips.as_ref().unwrap().len(), 3);
+        assert!(state.is_assumed("8.8.8.8"));
+        assert!(state.is_assumed("8.8.4.4"));
+        assert!(state.is_assumed("1.1.1.1"));
+        assert!(!state.is_assumed("9.9.9.9"));
+    }
+
+    #[test]
+    fn test_assumed_ips_remove_nonexistent() {
+        let mut state = OustipState::default();
+        state.add_assumed_ip("8.8.8.8");
+
+        // Removing nonexistent IP should not affect existing
+        state.remove_assumed_ip("1.1.1.1");
+        assert!(state.is_assumed("8.8.8.8"));
+    }
+
+    #[test]
+    fn test_assumed_ips_remove_from_empty() {
+        let mut state = OustipState::default();
+
+        // Should not panic when removing from None
+        state.remove_assumed_ip("8.8.8.8");
+        assert!(!state.is_assumed("8.8.8.8"));
+    }
+
+    #[test]
+    fn test_assumed_ips_cidr_notation() {
+        let mut state = OustipState::default();
+
+        state.add_assumed_ip("192.168.1.0/24");
+        assert!(state.is_assumed("192.168.1.0/24"));
+        assert!(!state.is_assumed("192.168.1.0")); // Different string
+    }
+
+    #[test]
+    fn test_assumed_ips_ipv6() {
+        let mut state = OustipState::default();
+
+        state.add_assumed_ip("2001:db8::1");
+        state.add_assumed_ip("fe80::1");
+
+        assert!(state.is_assumed("2001:db8::1"));
+        assert!(state.is_assumed("fe80::1"));
+        assert!(!state.is_assumed("::1"));
+    }
+
+    // =========================================================================
+    // update_sources comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_update_sources_calculates_ip_count() {
+        let mut state = OustipState::default();
+
+        // Create sources with known IP counts
+        let sources = vec![
+            (
+                "source1".to_string(),
+                1,
+                vec!["192.168.0.0/24".parse::<ipnet::IpNet>().unwrap()], // 256 IPs
+            ),
+            (
+                "source2".to_string(),
+                1,
+                vec!["10.0.0.0/8".parse::<ipnet::IpNet>().unwrap()], // 16,777,216 IPs
+            ),
+        ];
+
+        state.update_sources(sources);
+
+        // Check that IP counts were calculated
+        assert!(state.total_ips > 0);
+        assert!(state.sources[0].ip_count > 0);
+        assert!(state.sources[1].ip_count > 0);
+    }
+
+    #[test]
+    fn test_update_sources_sets_timestamp() {
+        let mut state = OustipState::default();
+        assert!(state.last_update.is_none());
+
+        state.update_sources(vec![]);
+
+        let update_time = state.last_update.unwrap();
+        let now = Utc::now();
+
+        // Should be within 1 second
+        assert!((now - update_time).num_seconds().abs() < 1);
+    }
+
+    #[test]
+    fn test_update_sources_replaces_old_sources() {
+        let mut state = OustipState::default();
+
+        // First update
+        let sources1 = vec![(
+            "old_source".to_string(),
+            100,
+            vec!["1.0.0.0/8".parse().unwrap()],
+        )];
+        state.update_sources(sources1);
+        assert_eq!(state.sources[0].name, "old_source");
+
+        // Second update - should replace
+        let sources2 = vec![(
+            "new_source".to_string(),
+            50,
+            vec!["2.0.0.0/8".parse().unwrap()],
+        )];
+        state.update_sources(sources2);
+        assert_eq!(state.sources.len(), 1);
+        assert_eq!(state.sources[0].name, "new_source");
+    }
+
+    #[test]
+    fn test_update_sources_preserves_assumed_ips() {
+        let mut state = OustipState::default();
+
+        // Add assumed IP
+        state.add_assumed_ip("8.8.8.8");
+
+        // Update sources
+        state.update_sources(vec![]);
+
+        // Assumed IP should still be there
+        assert!(state.is_assumed("8.8.8.8"));
+    }
+
+    #[test]
+    fn test_update_sources_large_ip_lists() {
+        let mut state = OustipState::default();
+
+        // Create a large list of IPs
+        let many_ips: Vec<ipnet::IpNet> = (0..5000u32)
+            .map(|i| {
+                let a = ((i / 256) % 256) as u8;
+                let b = (i % 256) as u8;
+                format!("10.{}.{}.0/24", a, b).parse().unwrap()
+            })
+            .collect();
+
+        let sources = vec![("large_source".to_string(), 5000, many_ips)];
+        state.update_sources(sources);
+
+        // Should only cache MAX_CACHED_IPS
+        assert_eq!(state.sources[0].ips.len(), OustipState::MAX_CACHED_IPS);
+    }
+
+    // =========================================================================
+    // SourceStats tests
+    // =========================================================================
+
+    #[test]
+    fn test_source_stats_clone() {
+        let stats = SourceStats {
+            name: "test".to_string(),
+            raw_count: 100,
+            ip_count: 5000,
+            ips: vec!["192.168.1.0/24".to_string()],
+        };
+
+        let cloned = stats.clone();
+        assert_eq!(cloned.name, stats.name);
+        assert_eq!(cloned.raw_count, stats.raw_count);
+        assert_eq!(cloned.ip_count, stats.ip_count);
+        assert_eq!(cloned.ips, stats.ips);
+    }
+
+    #[test]
+    fn test_source_stats_debug() {
+        let stats = SourceStats {
+            name: "test_source".to_string(),
+            raw_count: 42,
+            ip_count: 1000,
+            ips: vec![],
+        };
+
+        let debug_str = format!("{:?}", stats);
+        assert!(debug_str.contains("test_source"));
+        assert!(debug_str.contains("42"));
+        assert!(debug_str.contains("1000"));
+    }
+
+    // =========================================================================
+    // State serialization edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_state_with_unicode_in_assumed() {
+        let mut state = OustipState::default();
+
+        // This shouldn't happen in practice, but test edge case
+        state.add_assumed_ip("test-\u{1F600}");
+
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: OustipState = serde_json::from_str(&json).unwrap();
+
+        assert!(restored.is_assumed("test-\u{1F600}"));
+    }
+
+    #[test]
+    fn test_state_with_very_large_ip_count() {
+        let state = OustipState {
+            last_update: Some(Utc::now()),
+            sources: vec![],
+            total_entries: 1_000_000,
+            total_ips: u128::MAX,
+            assumed_ips: None,
+            last_known_total_ips: Some(u128::MAX),
+            last_preset: None,
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: OustipState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.total_ips, u128::MAX);
+    }
+
+    #[test]
+    fn test_state_with_empty_strings() {
+        let state = OustipState {
+            last_update: None,
+            sources: vec![],
+            total_entries: 0,
+            total_ips: 0,
+            assumed_ips: Some(vec!["".to_string()]), // Empty string
+            last_known_total_ips: None,
+            last_preset: Some("".to_string()), // Empty preset
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: OustipState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.assumed_ips.as_ref().unwrap().len(), 1);
+        assert_eq!(restored.last_preset, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_state_with_special_characters_in_source_name() {
+        let mut state = OustipState::default();
+
+        let sources = vec![(
+            "source-with/special:chars!@#$%".to_string(),
+            10,
+            vec!["192.168.1.0/24".parse().unwrap()],
+        )];
+        state.update_sources(sources);
+
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: OustipState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            restored.sources[0].name,
+            "source-with/special:chars!@#$%"
+        );
+    }
+
+    // =========================================================================
+    // Constants verification
+    // =========================================================================
+
+    #[test]
+    fn test_state_file_paths() {
+        assert!(STATE_FILE.starts_with("/var/lib/"));
+        assert!(STATE_FILE.ends_with(".json"));
+        assert!(STATE_BACKUP_FILE.ends_with(".bak"));
+    }
+
+    #[test]
+    fn test_max_cached_ips_constant() {
+        assert_eq!(OustipState::MAX_CACHED_IPS, 1000);
+    }
+
+    // =========================================================================
+    // OustipState Default trait
+    // =========================================================================
+
+    #[test]
+    fn test_oustip_state_default_all_fields() {
+        let state = OustipState::default();
+
+        assert!(state.last_update.is_none());
+        assert!(state.sources.is_empty());
+        assert_eq!(state.total_entries, 0);
+        assert_eq!(state.total_ips, 0);
+        assert!(state.assumed_ips.is_none());
+        assert!(state.last_known_total_ips.is_none());
+        assert!(state.last_preset.is_none());
+    }
+
+    // =========================================================================
+    // IP count aggregation tests
+    // =========================================================================
+
+    #[test]
+    fn test_total_entries_aggregation() {
+        let mut state = OustipState::default();
+
+        let sources = vec![
+            ("s1".to_string(), 100, vec![]),
+            ("s2".to_string(), 200, vec![]),
+            ("s3".to_string(), 50, vec![]),
+        ];
+        state.update_sources(sources);
+
+        assert_eq!(state.total_entries, 350);
+    }
+
+    #[test]
+    fn test_total_ips_aggregation() {
+        let mut state = OustipState::default();
+
+        // Two /24 networks = 256 + 256 = 512 IPs
+        let sources = vec![(
+            "test".to_string(),
+            2,
+            vec![
+                "192.168.1.0/24".parse().unwrap(),
+                "192.168.2.0/24".parse().unwrap(),
+            ],
+        )];
+        state.update_sources(sources);
+
+        assert!(state.total_ips > 0);
+    }
+}

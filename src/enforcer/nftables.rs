@@ -747,3 +747,418 @@ table ip oustip {
         assert!(restore_script.contains("table ip6 oustip"));
     }
 }
+
+#[cfg(test)]
+mod extended_tests {
+    use super::*;
+
+    // =========================================================================
+    // is_safe_nft_element comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_is_safe_nft_element_all_valid_ipv4_chars() {
+        // Test all valid characters for IPv4
+        assert!(is_safe_nft_element("0123456789./"));
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_all_valid_ipv6_chars() {
+        // Test all valid characters for IPv6
+        assert!(is_safe_nft_element("0123456789:abcdef/"));
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_uppercase_hex() {
+        // Uppercase hex should fail (IPv6 addresses should be lowercase)
+        assert!(!is_safe_nft_element("2001:DB8::1"));
+        assert!(!is_safe_nft_element("ABCDEF"));
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_special_chars_rejected() {
+        let dangerous_chars = [
+            ' ', '\t', '\n', '\r', ';', '{', '}', '(', ')', '[', ']',
+            '|', '&', '$', '`', '\\', '"', '\'', '!', '#', '%', '^',
+            '*', '+', '=', '<', '>', '?', '~',
+        ];
+
+        for c in dangerous_chars {
+            let test = format!("192.168.1.0{}", c);
+            assert!(!is_safe_nft_element(&test), "Should reject char: {:?}", c);
+        }
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_shell_injection() {
+        // Shell command injection attempts
+        assert!(!is_safe_nft_element("$(whoami)"));
+        assert!(!is_safe_nft_element("`id`"));
+        assert!(!is_safe_nft_element("1.2.3.4; rm -rf /"));
+        assert!(!is_safe_nft_element("1.2.3.4 && whoami"));
+        assert!(!is_safe_nft_element("1.2.3.4 | cat /etc/passwd"));
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_nft_syntax_injection() {
+        // nftables syntax injection attempts
+        assert!(!is_safe_nft_element("1.2.3.4 }"));
+        assert!(!is_safe_nft_element("{ 1.2.3.4"));
+        assert!(!is_safe_nft_element("1.2.3.4, 5.6.7.8")); // comma not allowed
+        assert!(!is_safe_nft_element("elements = {"));
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_control_characters() {
+        assert!(!is_safe_nft_element("192.168.1.0\x00"));
+        assert!(!is_safe_nft_element("192.168.1.0\x1b"));
+        assert!(!is_safe_nft_element("\x00192.168.1.0"));
+    }
+
+    // =========================================================================
+    // Script generation comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_generate_apply_script_conntrack_priority() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Conntrack mode should use priority -1
+        assert!(script.contains("priority -1"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_raw_priority() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Raw);
+
+        // Raw mode should use priority -300
+        assert!(script.contains("priority -300"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_has_log_prefix() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should include log prefix for debugging
+        assert!(script.contains("log prefix \"OustIP-Blocked:"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_has_counter() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should include counter for stats
+        assert!(script.contains("counter"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_has_drop() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should drop matching packets
+        assert!(script.contains("drop"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_interval_flag() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should have interval flag for CIDR support
+        assert!(script.contains("flags interval"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_input_and_forward_chains() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should have both input and forward chains
+        assert!(script.contains("chain input"));
+        assert!(script.contains("chain forward"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_raw_mode_has_prerouting() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Raw);
+
+        // Raw mode should also have prerouting chain
+        assert!(script.contains("chain prerouting"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_accepts_by_default() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Default policy should be accept
+        assert!(script.contains("policy accept"));
+    }
+
+    #[test]
+    fn test_generate_remove_script_structure() {
+        let backend = NftablesBackend::new();
+        let script = backend.generate_remove_script();
+
+        // Should create empty table first then delete
+        assert!(script.contains("table ip oustip"));
+        assert!(script.contains("table ip6 oustip"));
+        assert!(script.contains("delete table ip oustip"));
+        assert!(script.contains("delete table ip6 oustip"));
+    }
+
+    // =========================================================================
+    // parse_counters comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_counters_multiple_rules() {
+        let backend = NftablesBackend::new();
+        let output = r#"
+table ip oustip {
+    chain input {
+        counter packets 100 bytes 1000 drop
+        counter packets 200 bytes 2000 drop
+    }
+    chain forward {
+        counter packets 50 bytes 500 drop
+    }
+}
+"#;
+        let stats = backend.parse_counters(output);
+        // Should sum all counters
+        assert_eq!(stats.packets_blocked, 350);
+        assert_eq!(stats.bytes_blocked, 3500);
+    }
+
+    #[test]
+    fn test_parse_counters_with_extra_whitespace() {
+        let backend = NftablesBackend::new();
+        let output = "    counter    packets    123    bytes    456   ";
+        let stats = backend.parse_counters(output);
+        assert_eq!(stats.packets_blocked, 123);
+        assert_eq!(stats.bytes_blocked, 456);
+    }
+
+    #[test]
+    fn test_parse_counters_empty_output() {
+        let backend = NftablesBackend::new();
+        let stats = backend.parse_counters("");
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    #[test]
+    fn test_parse_counters_no_counter_keyword() {
+        let backend = NftablesBackend::new();
+        let output = "table ip oustip { }";
+        let stats = backend.parse_counters(output);
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    #[test]
+    fn test_parse_counters_zero_values() {
+        let backend = NftablesBackend::new();
+        let output = "counter packets 0 bytes 0";
+        let stats = backend.parse_counters(output);
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    // =========================================================================
+    // extract_number_after comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_number_after_multiple_occurrences() {
+        // Should find first occurrence
+        let result = extract_number_after("packets 123 packets 456", "packets");
+        assert_eq!(result, Some(123));
+    }
+
+    #[test]
+    fn test_extract_number_after_negative_parses_number() {
+        // extract_number_after skips the '-' and parses the digits after
+        let result = extract_number_after("packets -123", "packets");
+        // The function finds "packets", then skips non-digits (' -'), then parses "123"
+        assert_eq!(result, Some(123));
+    }
+
+    #[test]
+    fn test_extract_number_after_u64_max() {
+        let max_str = format!("packets {}", u64::MAX);
+        let result = extract_number_after(&max_str, "packets");
+        assert_eq!(result, Some(u64::MAX));
+    }
+
+    #[test]
+    fn test_extract_number_after_overflow() {
+        // Number larger than u64::MAX
+        let too_large = "packets 99999999999999999999999";
+        let result = extract_number_after(too_large, "packets");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_number_after_keyword_at_end() {
+        let result = extract_number_after("value packets", "packets");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_number_after_finds_within_string() {
+        // The function uses .find() which matches substrings
+        let result = extract_number_after("xpackets 123", "packets");
+        // "packets" is found within "xpackets" so it parses 123
+        assert_eq!(result, Some(123));
+    }
+
+    // =========================================================================
+    // count_set_elements comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_count_set_elements_single_element() {
+        let output = "elements = { 192.168.1.0/24 }";
+        assert_eq!(count_set_elements(output), 1);
+    }
+
+    #[test]
+    fn test_count_set_elements_empty_set() {
+        let output = "elements = { }";
+        assert_eq!(count_set_elements(output), 0);
+    }
+
+    #[test]
+    fn test_count_set_elements_no_elements_line() {
+        let output = "table ip oustip { set blocklist { } }";
+        assert_eq!(count_set_elements(output), 0);
+    }
+
+    #[test]
+    fn test_count_set_elements_many() {
+        let output = "elements = { 1.1.1.0/24, 2.2.2.0/24, 3.3.3.0/24, 4.4.4.0/24, 5.5.5.0/24 }";
+        assert_eq!(count_set_elements(output), 5);
+    }
+
+    #[test]
+    fn test_count_set_elements_multiline() {
+        let output = r#"
+elements = { 1.1.1.0/24, 2.2.2.0/24 }
+elements = { 3.3.3.0/24 }
+"#;
+        // Should sum across all elements lines
+        assert_eq!(count_set_elements(output), 3);
+    }
+
+    // =========================================================================
+    // IPv6 specific tests
+    // =========================================================================
+
+    #[test]
+    fn test_generate_ip6_table_type() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["2001:db8::/32".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        assert!(script.contains("type ipv6_addr"));
+    }
+
+    #[test]
+    fn test_generate_ip6_table_uses_ip6_saddr() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["2001:db8::/32".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        assert!(script.contains("ip6 saddr @"));
+    }
+
+    #[test]
+    fn test_generate_ipv4_uses_ip_saddr() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        assert!(script.contains("ip saddr @"));
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_full_ipv6() {
+        // Full IPv6 address
+        assert!(is_safe_nft_element("2001:0db8:0000:0000:0000:0000:0000:0001"));
+    }
+
+    #[test]
+    fn test_is_safe_nft_element_compressed_ipv6() {
+        assert!(is_safe_nft_element("2001:db8::1"));
+        assert!(is_safe_nft_element("::1"));
+        assert!(is_safe_nft_element("::"));
+        assert!(is_safe_nft_element("fe80::"));
+    }
+
+    // =========================================================================
+    // Constants tests
+    // =========================================================================
+
+    #[test]
+    fn test_table_name_constant() {
+        assert_eq!(TABLE_NAME, "oustip");
+    }
+
+    #[test]
+    fn test_set_name_constants() {
+        assert_eq!(SET_NAME, "blocklist");
+        assert_eq!(SET_NAME_V6, "blocklist_v6");
+    }
+
+    // =========================================================================
+    // Backend Default trait
+    // =========================================================================
+
+    #[test]
+    fn test_nftables_backend_default() {
+        let backend = NftablesBackend::default();
+        // Just verify it can be created
+        let _ = backend;
+    }
+
+    // =========================================================================
+    // Script idempotency tests
+    // =========================================================================
+
+    #[test]
+    fn test_generate_apply_script_uses_add_table() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should use 'add table' for idempotent creation
+        assert!(script.contains("add table ip oustip"));
+    }
+
+    #[test]
+    fn test_generate_apply_script_uses_flush() {
+        let backend = NftablesBackend::new();
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let script = backend.generate_apply_script(&ips, FilterMode::Conntrack);
+
+        // Should flush table to clear old rules
+        assert!(script.contains("flush table ip oustip"));
+    }
+}

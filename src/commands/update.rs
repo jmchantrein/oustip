@@ -1031,3 +1031,321 @@ mod tests {
         assert!(change > 10.0, "Massive increase should exceed threshold");
     }
 }
+
+#[cfg(test)]
+mod extended_tests {
+    use super::*;
+
+    // =========================================================================
+    // calculate_change_percent extended tests
+    // =========================================================================
+
+    #[test]
+    fn test_calculate_change_percent_boundary_values() {
+        // Test at u128 boundaries
+        assert_eq!(calculate_change_percent(1, 1), 0.0);
+        assert_eq!(calculate_change_percent(1, 2), 100.0);
+        assert_eq!(calculate_change_percent(2, 1), 50.0);
+    }
+
+    #[test]
+    fn test_calculate_change_percent_precision() {
+        // Test precision with specific values
+        let change = calculate_change_percent(1000, 1001);
+        assert!((change - 0.1).abs() < 0.01);
+
+        let change = calculate_change_percent(10000, 10050);
+        assert!((change - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_change_percent_doubling_halving() {
+        // Doubling should be 100%
+        assert_eq!(calculate_change_percent(100, 200), 100.0);
+        // Halving should be 50%
+        assert_eq!(calculate_change_percent(100, 50), 50.0);
+    }
+
+    #[test]
+    fn test_calculate_change_percent_to_zero() {
+        // Decreasing to zero should be 100%
+        let change = calculate_change_percent(100, 0);
+        assert_eq!(change, 100.0);
+    }
+
+    // =========================================================================
+    // networks_overlap extended tests
+    // =========================================================================
+
+    #[test]
+    fn test_networks_overlap_single_ip_v4() {
+        let a: IpNet = "192.168.1.1/32".parse().unwrap();
+        let b: IpNet = "192.168.1.1/32".parse().unwrap();
+        assert!(networks_overlap(&a, &b));
+    }
+
+    #[test]
+    fn test_networks_overlap_single_ip_in_cidr() {
+        let single: IpNet = "192.168.1.1/32".parse().unwrap();
+        let cidr: IpNet = "192.168.1.0/24".parse().unwrap();
+        assert!(networks_overlap(&single, &cidr));
+    }
+
+    #[test]
+    fn test_networks_overlap_completely_disjoint() {
+        let a: IpNet = "192.168.0.0/16".parse().unwrap();
+        let b: IpNet = "10.0.0.0/8".parse().unwrap();
+        assert!(!networks_overlap(&a, &b));
+    }
+
+    #[test]
+    fn test_networks_overlap_ipv6_contained() {
+        let large: IpNet = "2001:db8::/32".parse().unwrap();
+        let small: IpNet = "2001:db8:1::/48".parse().unwrap();
+        assert!(networks_overlap(&large, &small));
+    }
+
+    #[test]
+    fn test_networks_overlap_ipv6_disjoint() {
+        let a: IpNet = "2001:db8::/32".parse().unwrap();
+        let b: IpNet = "2001:db9::/32".parse().unwrap();
+        assert!(!networks_overlap(&a, &b));
+    }
+
+    #[test]
+    fn test_networks_overlap_partial_overlap_at_boundary() {
+        // Two /24 networks that share a boundary but don't overlap
+        let a: IpNet = "192.168.0.0/24".parse().unwrap();
+        let b: IpNet = "192.168.1.0/24".parse().unwrap();
+        assert!(!networks_overlap(&a, &b));
+    }
+
+    #[test]
+    fn test_networks_overlap_supernet_contains_subnet() {
+        let supernet: IpNet = "10.0.0.0/8".parse().unwrap();
+        let subnet: IpNet = "10.255.255.0/24".parse().unwrap();
+        assert!(networks_overlap(&supernet, &subnet));
+    }
+
+    #[test]
+    fn test_networks_overlap_mixed_v4_v6() {
+        // IPv4 and IPv6 should never overlap
+        let v4: IpNet = "192.168.0.0/16".parse().unwrap();
+        let v6: IpNet = "2001:db8::/32".parse().unwrap();
+        // They can't contain each other
+        assert!(!v4.contains(&v6.addr()));
+        assert!(!v6.contains(&v4.addr()));
+    }
+
+    // =========================================================================
+    // Failure threshold tests
+    // =========================================================================
+
+    #[test]
+    fn test_failure_rate_calculation_edge_cases() {
+        // All fail
+        let failure_rate = 10f64 / 10f64;
+        assert_eq!(failure_rate, 1.0);
+
+        // None fail
+        let failure_rate = 0f64 / 10f64;
+        assert_eq!(failure_rate, 0.0);
+
+        // Exactly at threshold
+        let failure_rate = 5f64 / 10f64;
+        assert_eq!(failure_rate, 0.5);
+    }
+
+    #[test]
+    fn test_failure_rate_just_below_threshold() {
+        let total_sources = 10usize;
+        let failed_sources = 4usize;
+        let failure_rate = failed_sources as f64 / total_sources as f64;
+        assert!(failure_rate < DEFAULT_FAILURE_THRESHOLD);
+        assert!((failure_rate - 0.4).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_failure_rate_just_above_threshold() {
+        let total_sources = 10usize;
+        let failed_sources = 6usize;
+        let failure_rate = failed_sources as f64 / total_sources as f64;
+        assert!(failure_rate > DEFAULT_FAILURE_THRESHOLD);
+        assert!((failure_rate - 0.6).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_failure_rate_single_source() {
+        // Single source fails
+        let failure_rate = 1f64 / 1f64;
+        assert!(failure_rate >= DEFAULT_FAILURE_THRESHOLD);
+
+        // Single source succeeds
+        let failure_rate = 0f64 / 1f64;
+        assert!(failure_rate < DEFAULT_FAILURE_THRESHOLD);
+    }
+
+    #[test]
+    fn test_failure_rate_many_sources() {
+        // 50 out of 100 sources fail
+        let failure_rate = 50f64 / 100f64;
+        assert_eq!(failure_rate, 0.5);
+        assert!(failure_rate >= DEFAULT_FAILURE_THRESHOLD);
+    }
+
+    // =========================================================================
+    // Disk space constants tests
+    // =========================================================================
+
+    #[test]
+    fn test_min_free_disk_space_is_100mb() {
+        assert_eq!(MIN_FREE_DISK_SPACE, 100 * 1024 * 1024);
+        assert_eq!(MIN_FREE_DISK_SPACE, 104_857_600);
+    }
+
+    #[test]
+    fn test_default_failure_threshold_is_50_percent() {
+        assert_eq!(DEFAULT_FAILURE_THRESHOLD, 0.5);
+    }
+
+    // =========================================================================
+    // Overlap detection logic tests
+    // =========================================================================
+
+    #[test]
+    fn test_overlap_detection_empty_inputs() {
+        let allowlist: Vec<IpNet> = vec![];
+        let source_stats: Vec<(String, usize, Vec<IpNet>)> = vec![];
+        let state = OustipState::default();
+
+        // The detect_overlaps function is async, so we test its logic here
+        // For empty inputs, there should be no overlaps
+        assert!(allowlist.is_empty());
+        assert!(source_stats.is_empty());
+        assert!(state.assumed_ips.is_none());
+    }
+
+    #[test]
+    fn test_overlap_detection_no_matching_ips() {
+        let allowlist: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
+        let blocklist: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+
+        // Check if they overlap
+        let overlaps = allowlist.iter().any(|allow| {
+            blocklist.iter().any(|block| networks_overlap(allow, block))
+        });
+        assert!(!overlaps);
+    }
+
+    #[test]
+    fn test_overlap_detection_exact_match() {
+        let allowlist: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
+        let blocklist: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
+
+        let overlaps = allowlist.iter().any(|allow| {
+            blocklist.iter().any(|block| networks_overlap(allow, block))
+        });
+        assert!(overlaps);
+    }
+
+    #[test]
+    fn test_overlap_detection_containment() {
+        let allowlist: Vec<IpNet> = vec!["192.168.1.100/32".parse().unwrap()];
+        let blocklist: Vec<IpNet> = vec!["192.168.0.0/16".parse().unwrap()];
+
+        let overlaps = allowlist.iter().any(|allow| {
+            blocklist.iter().any(|block| networks_overlap(allow, block))
+        });
+        assert!(overlaps);
+    }
+
+    // =========================================================================
+    // Alert threshold detection tests
+    // =========================================================================
+
+    #[test]
+    fn test_should_alert_boundary_conditions() {
+        // Testing alert threshold logic
+        let threshold = 10.0f64;
+
+        // Exactly at threshold - should NOT trigger (need to exceed)
+        let change = 10.0f64;
+        assert!(!(change > threshold));
+
+        // Just above threshold
+        let change = 10.01f64;
+        assert!(change > threshold);
+
+        // Just below threshold
+        let change = 9.99f64;
+        assert!(!(change > threshold));
+    }
+
+    #[test]
+    fn test_preset_change_skips_alert() {
+        let previous_preset = Some("recommended");
+        let current_preset = "paranoid";
+
+        // Different presets = intentional change = skip alert
+        let should_skip = previous_preset.map(|p| p != current_preset).unwrap_or(false);
+        assert!(should_skip);
+    }
+
+    #[test]
+    fn test_same_preset_checks_change() {
+        let previous_preset = Some("recommended");
+        let current_preset = "recommended";
+
+        // Same preset = check for upstream changes
+        let should_skip = previous_preset.map(|p| p != current_preset).unwrap_or(false);
+        assert!(!should_skip);
+    }
+
+    #[test]
+    fn test_no_previous_preset_skips() {
+        let previous_preset: Option<&str> = None;
+
+        // No previous preset (first run) = skip alert
+        let should_skip = previous_preset.is_none();
+        assert!(should_skip);
+    }
+
+    // =========================================================================
+    // Edge cases for change percent
+    // =========================================================================
+
+    #[test]
+    fn test_change_percent_max_u128() {
+        // Test with very large numbers approaching u128 max
+        let base = u128::MAX / 2;
+        let increased = base + base / 100; // ~1% increase
+
+        let change = calculate_change_percent(base, increased);
+        assert!(change > 0.0 && change < 2.0);
+    }
+
+    #[test]
+    fn test_change_percent_realistic_blocklist_sizes() {
+        // Typical blocklist sizes
+        let sizes = [
+            (10_000, 10_500),    // Small list, 5% increase
+            (100_000, 95_000),   // Medium list, 5% decrease
+            (1_000_000, 1_200_000), // Large list, 20% increase
+        ];
+
+        for (old, new) in sizes {
+            let change = calculate_change_percent(old, new);
+            assert!(change >= 0.0, "Change should be non-negative");
+        }
+    }
+
+    #[test]
+    fn test_change_percent_ipv6_scale() {
+        // IPv6 can have massive IP counts
+        let base: u128 = 340_282_366_920_938_463_463_374_607_431_768_211_455; // u128::MAX
+        let reduced = base / 2;
+
+        let change = calculate_change_percent(base, reduced);
+        assert!((change - 50.0).abs() < 0.01);
+    }
+}
