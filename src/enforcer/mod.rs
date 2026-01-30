@@ -14,6 +14,7 @@ use tracing::warn;
 pub use iptables::IptablesBackend;
 pub use nftables::NftablesBackend;
 
+use crate::cmd_abstraction::{args_to_strings, CommandExecutor};
 use crate::config::{Backend, FilterMode};
 
 // Default paths for firewall commands (most distros use /usr/sbin)
@@ -277,6 +278,24 @@ pub(crate) fn exec_cmd(program: &str, args: &[&str]) -> Result<String> {
                 anyhow::bail!("Error waiting for {}: {}", program, e);
             }
         }
+    }
+}
+
+/// Execute a command using an injected CommandExecutor.
+///
+/// This function enables dependency injection for testing, allowing tests
+/// to mock command execution without actually running system commands.
+pub(crate) fn exec_cmd_with_executor<E: CommandExecutor>(
+    executor: &E,
+    cmd: &str,
+    args: &[&str],
+) -> Result<String> {
+    let args_vec = args_to_strings(args);
+    let output = executor.execute(cmd, &args_vec)?;
+    if output.success {
+        Ok(output.stdout)
+    } else {
+        anyhow::bail!("{} failed: {}", cmd, output.stderr)
     }
 }
 

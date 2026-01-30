@@ -7,7 +7,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tracing::{debug, info, warn};
 
-use super::{exec_cmd, nft_path, validate_entry_count, FirewallBackend, FirewallStats};
+use super::{exec_cmd, exec_cmd_with_executor, nft_path, validate_entry_count, FirewallBackend, FirewallStats};
+use crate::cmd_abstraction::{args_to_strings, CommandExecutor};
 use crate::config::FilterMode;
 
 const TABLE_NAME: &str = "oustip";
@@ -273,6 +274,108 @@ impl NftablesBackend {
         }
 
         stats
+    }
+
+    /// Execute nft script using an injected CommandExecutor
+    pub fn exec_nft_script_with_executor<E: CommandExecutor>(
+        &self,
+        executor: &E,
+        script: &str,
+    ) -> Result<()> {
+        debug!("Executing nft script (with executor):\n{}", script);
+        let args = args_to_strings(&["-f", "-"]);
+        let output = executor.execute_with_stdin(nft_path(), &args, script)?;
+        if !output.success {
+            anyhow::bail!("nft failed: {}", output.stderr);
+        }
+        Ok(())
+    }
+
+    /// Apply rules using an injected CommandExecutor
+    pub fn apply_rules_with_executor<E: CommandExecutor>(
+        &self,
+        executor: &E,
+        ips: &[IpNet],
+        mode: FilterMode,
+    ) -> Result<()> {
+        validate_entry_count(ips.len())?;
+        let script = self.generate_apply_script(ips, mode);
+        self.exec_nft_script_with_executor(executor, &script)?;
+        info!("Applied nftables rules with {} entries", ips.len());
+        Ok(())
+    }
+
+    /// Check if IP is blocked using an injected CommandExecutor
+    pub fn is_blocked_with_executor<E: CommandExecutor>(
+        &self,
+        executor: &E,
+        ip: &IpNet,
+    ) -> Result<bool> {
+        let (table_family, set_name) = match ip {
+            IpNet::V4(_) => ("ip", SET_NAME),
+            IpNet::V6(_) => ("ip6", SET_NAME_V6),
+        };
+        let output = exec_cmd_with_executor(
+            executor,
+            nft_path(),
+            &["list", "set", table_family, TABLE_NAME, set_name],
+        )?;
+        let ip_str = ip.to_string();
+        Ok(output.contains(&format!(" {} ", ip_str))
+            || output.contains(&format!("{},", ip_str))
+            || output.contains(&format!(" {}\n", ip_str))
+            || output.ends_with(&ip_str))
+    }
+
+    /// Get stats using an injected CommandExecutor
+    pub fn get_stats_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<FirewallStats> {
+        let mut stats = FirewallStats::default();
+        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "table", "ip", TABLE_NAME]) {
+            let v4_stats = self.parse_counters(&output);
+            stats.packets_blocked += v4_stats.packets_blocked;
+            stats.bytes_blocked += v4_stats.bytes_blocked;
+        }
+        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "table", "ip6", TABLE_NAME]) {
+            let v6_stats = self.parse_counters(&output);
+            stats.packets_blocked += v6_stats.packets_blocked;
+            stats.bytes_blocked += v6_stats.bytes_blocked;
+        }
+        Ok(stats)
+    }
+
+    /// Get entry count using an injected CommandExecutor
+    pub fn entry_count_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<usize> {
+        let mut total_count = 0usize;
+        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "set", "ip", TABLE_NAME, SET_NAME]) {
+            total_count += count_set_elements(&output);
+        }
+        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6]) {
+            total_count += count_set_elements(&output);
+        }
+        Ok(total_count)
+    }
+
+    /// Remove rules using an injected CommandExecutor
+    pub fn remove_rules_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<()> {
+        let args_v4 = args_to_strings(&["list", "table", "ip", TABLE_NAME]);
+        let v4_exists = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let args_v6 = args_to_strings(&["list", "table", "ip6", TABLE_NAME]);
+        let v6_exists = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        if v4_exists || v6_exists {
+            let script = self.generate_remove_script();
+            self.exec_nft_script_with_executor(executor, &script)?;
+            info!("Removed nftables rules (IPv4 and IPv6)");
+        }
+        Ok(())
+    }
+
+    /// Check if rules are active using an injected CommandExecutor
+    pub fn is_active_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<bool> {
+        let args_v4 = args_to_strings(&["list", "table", "ip", TABLE_NAME]);
+        let v4_active = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let args_v6 = args_to_strings(&["list", "table", "ip6", TABLE_NAME]);
+        let v6_active = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        Ok(v4_active || v6_active)
     }
 }
 
@@ -1160,5 +1263,475 @@ elements = { 3.3.3.0/24 }
 
         // Should flush table to clear old rules
         assert!(script.contains("flush table ip oustip"));
+    }
+}
+
+// =============================================================================
+// MockCommandExecutor-based tests
+// =============================================================================
+#[cfg(test)]
+mod mock_executor_tests {
+    use super::*;
+    use anyhow::Result;
+    use mockall::automock;
+
+    /// Command output for testing
+    #[derive(Debug, Clone, Default)]
+    struct CmdOutput {
+        stdout: String,
+        stderr: String,
+        success: bool,
+    }
+
+    /// Trait for command execution (test-only)
+    #[automock]
+    trait CmdExecutor: Send + Sync {
+        fn execute(&self, cmd: &str, args: &[String]) -> Result<CmdOutput>;
+        fn execute_with_stdin(&self, cmd: &str, args: &[String], stdin: &str) -> Result<CmdOutput>;
+    }
+
+    fn args_to_vec(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn success_output(stdout: &str) -> CmdOutput {
+        CmdOutput {
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+            success: true,
+        }
+    }
+
+    fn failure_output(stderr: &str) -> CmdOutput {
+        CmdOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            success: false,
+        }
+    }
+
+    fn args_has(args: &[String], val: &str) -> bool {
+        args.iter().any(|a| a == val)
+    }
+
+    fn args_eq(args: &[String], expected: &[&str]) -> bool {
+        args.len() == expected.len() && args.iter().zip(expected.iter()).all(|(a, e)| a == *e)
+    }
+
+    // Helper functions for executor-based operations
+    fn exec_nft_script_mock<E: CmdExecutor>(executor: &E, script: &str) -> Result<()> {
+        let args = args_to_vec(&["-f", "-"]);
+        let output = executor.execute_with_stdin(nft_path(), &args, script)?;
+        if !output.success {
+            anyhow::bail!("nft failed: {}", output.stderr);
+        }
+        Ok(())
+    }
+
+    fn apply_rules_mock<E: CmdExecutor>(
+        backend: &NftablesBackend,
+        executor: &E,
+        ips: &[IpNet],
+        mode: FilterMode,
+    ) -> Result<()> {
+        validate_entry_count(ips.len())?;
+        let script = backend.generate_apply_script(ips, mode);
+        exec_nft_script_mock(executor, &script)?;
+        Ok(())
+    }
+
+    fn exec_cmd_mock<E: CmdExecutor>(executor: &E, cmd: &str, args: &[&str]) -> Result<String> {
+        let args_vec = args_to_vec(args);
+        let output = executor.execute(cmd, &args_vec)?;
+        if output.success {
+            Ok(output.stdout)
+        } else {
+            anyhow::bail!("{} failed: {}", cmd, output.stderr)
+        }
+    }
+
+    fn is_blocked_mock<E: CmdExecutor>(
+        _backend: &NftablesBackend,
+        executor: &E,
+        ip: &IpNet,
+    ) -> Result<bool> {
+        let (table_family, set_name) = match ip {
+            IpNet::V4(_) => ("ip", SET_NAME),
+            IpNet::V6(_) => ("ip6", SET_NAME_V6),
+        };
+        let output = exec_cmd_mock(executor, nft_path(), &["list", "set", table_family, TABLE_NAME, set_name])?;
+        let ip_str = ip.to_string();
+        Ok(output.contains(&format!(" {} ", ip_str))
+            || output.contains(&format!("{},", ip_str))
+            || output.contains(&format!(" {}\n", ip_str))
+            || output.ends_with(&ip_str))
+    }
+
+    fn get_stats_mock<E: CmdExecutor>(backend: &NftablesBackend, executor: &E) -> Result<FirewallStats> {
+        let mut stats = FirewallStats::default();
+        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "table", "ip", TABLE_NAME]) {
+            let v4_stats = backend.parse_counters(&output);
+            stats.packets_blocked += v4_stats.packets_blocked;
+            stats.bytes_blocked += v4_stats.bytes_blocked;
+        }
+        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "table", "ip6", TABLE_NAME]) {
+            let v6_stats = backend.parse_counters(&output);
+            stats.packets_blocked += v6_stats.packets_blocked;
+            stats.bytes_blocked += v6_stats.bytes_blocked;
+        }
+        Ok(stats)
+    }
+
+    fn entry_count_mock<E: CmdExecutor>(executor: &E) -> Result<usize> {
+        let mut total_count = 0usize;
+        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "set", "ip", TABLE_NAME, SET_NAME]) {
+            total_count += count_set_elements(&output);
+        }
+        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6]) {
+            total_count += count_set_elements(&output);
+        }
+        Ok(total_count)
+    }
+
+    fn remove_rules_mock<E: CmdExecutor>(backend: &NftablesBackend, executor: &E) -> Result<()> {
+        let args_v4 = args_to_vec(&["list", "table", "ip", TABLE_NAME]);
+        let v4_exists = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let args_v6 = args_to_vec(&["list", "table", "ip6", TABLE_NAME]);
+        let v6_exists = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        if v4_exists || v6_exists {
+            let script = backend.generate_remove_script();
+            exec_nft_script_mock(executor, &script)?;
+        }
+        Ok(())
+    }
+
+    fn is_active_mock<E: CmdExecutor>(executor: &E) -> Result<bool> {
+        let args_v4 = args_to_vec(&["list", "table", "ip", TABLE_NAME]);
+        let v4_active = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let args_v6 = args_to_vec(&["list", "table", "ip6", TABLE_NAME]);
+        let v6_active = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        Ok(v4_active || v6_active)
+    }
+
+    #[test]
+    fn test_apply_rules_success() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .withf(|cmd, args, _stdin| cmd.ends_with("nft") && args_eq(args, &["-f", "-"]))
+            .times(1)
+            .returning(|_, _, _| Ok(success_output("")));
+
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let result = apply_rules_mock(&backend, &mock, &ips, FilterMode::Conntrack);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_apply_rules_failure_nft_syntax_error() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .times(1)
+            .returning(|_, _, _| Ok(failure_output("Error: syntax error")));
+
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let result = apply_rules_mock(&backend, &mock, &ips, FilterMode::Conntrack);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("nft failed"));
+    }
+
+    #[test]
+    fn test_apply_rules_with_ipv6() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .times(1)
+            .returning(|_, _, stdin: &str| {
+                assert!(stdin.contains("2001:db8::/32"));
+                assert!(stdin.contains("table ip6 oustip"));
+                Ok(success_output(""))
+            });
+
+        let ips: Vec<IpNet> = vec!["2001:db8::/32".parse().unwrap()];
+        let result = apply_rules_mock(&backend, &mock, &ips, FilterMode::Conntrack);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_is_blocked_ipv4_found() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("nft") && args_has(args, "list") && args_has(args, "set"))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output("elements = { 192.168.1.0/24, 10.0.0.0/8 }"))
+            });
+
+        let ip: IpNet = "192.168.1.0/24".parse().unwrap();
+        let result = is_blocked_mock(&backend, &mock, &ip);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_blocked_ipv4_not_found() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(1)
+            .returning(|_, _| Ok(success_output("elements = { 10.0.0.0/8 }")));
+
+        let ip: IpNet = "192.168.1.0/24".parse().unwrap();
+        let result = is_blocked_mock(&backend, &mock, &ip);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_is_blocked_ipv6_found() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "ip6") && args_has(args, "blocklist_v6"))
+            .times(1)
+            .returning(|_, _| Ok(success_output("elements = { 2001:db8::/32 }")));
+
+        let ip: IpNet = "2001:db8::/32".parse().unwrap();
+        let result = is_blocked_mock(&backend, &mock, &ip);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_get_stats_parsing() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "ip") && !args_has(args, "ip6"))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output("counter packets 100 bytes 5000 drop\ncounter packets 50 bytes 2500 drop"))
+            });
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "ip6"))
+            .times(1)
+            .returning(|_, _| Ok(success_output("counter packets 25 bytes 1000 drop")));
+
+        let result = get_stats_mock(&backend, &mock);
+        assert!(result.is_ok());
+        let stats = result.unwrap();
+        assert_eq!(stats.packets_blocked, 175);
+        assert_eq!(stats.bytes_blocked, 8500);
+    }
+
+    #[test]
+    fn test_get_stats_no_tables() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(2)
+            .returning(|_, _| Ok(failure_output("table not found")));
+
+        let result = get_stats_mock(&backend, &mock);
+        assert!(result.is_ok());
+        let stats = result.unwrap();
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    #[test]
+    fn test_entry_count_ipv4_only() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "ip") && args_has(args, "blocklist") && !args_has(args, "blocklist_v6"))
+            .times(1)
+            .returning(|_, _| Ok(success_output("elements = { 192.168.1.0/24, 10.0.0.0/8, 172.16.0.0/12 }")));
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "ip6"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("table not found")));
+
+        let result = entry_count_mock(&mock);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3);
+    }
+
+    #[test]
+    fn test_remove_rules_tables_exist() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "list") && args_has(args, "table"))
+            .times(2)
+            .returning(|_, _| Ok(success_output("")));
+
+        mock.expect_execute_with_stdin()
+            .withf(|_, args, stdin: &str| {
+                args_eq(args, &["-f", "-"])
+                    && stdin.contains("delete table ip oustip")
+                    && stdin.contains("delete table ip6 oustip")
+            })
+            .times(1)
+            .returning(|_, _, _| Ok(success_output("")));
+
+        let result = remove_rules_mock(&backend, &mock);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_remove_rules_no_tables() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(2)
+            .returning(|_, _| Ok(failure_output("table not found")));
+
+        let result = remove_rules_mock(&backend, &mock);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_is_active_both_tables() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute().times(2).returning(|_, _| Ok(success_output("")));
+
+        let result = is_active_mock(&mock);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_active_only_ipv4() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "ip") && !args_has(args, "ip6"))
+            .times(1)
+            .returning(|_, _| Ok(success_output("")));
+
+        mock.expect_execute()
+            .withf(|_, args| args_has(args, "ip6"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("table not found")));
+
+        let result = is_active_mock(&mock);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_active_no_tables() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(2)
+            .returning(|_, _| Ok(failure_output("table not found")));
+
+        let result = is_active_mock(&mock);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_exec_nft_script_success() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .withf(|cmd, args, stdin| {
+                cmd.ends_with("nft") && args_eq(args, &["-f", "-"]) && stdin == "test script"
+            })
+            .times(1)
+            .returning(|_, _, _| Ok(success_output("")));
+
+        let result = exec_nft_script_mock(&mock, "test script");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_exec_nft_script_failure() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .times(1)
+            .returning(|_, _, _| Ok(failure_output("Error: invalid syntax")));
+
+        let result = exec_nft_script_mock(&mock, "invalid script");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid syntax"));
+    }
+
+    #[test]
+    fn test_apply_rules_raw_mode() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .times(1)
+            .returning(|_, _, stdin: &str| {
+                assert!(stdin.contains("chain prerouting"));
+                assert!(stdin.contains("priority -300"));
+                Ok(success_output(""))
+            });
+
+        let ips: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
+        let result = apply_rules_mock(&backend, &mock, &ips, FilterMode::Raw);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_apply_rules_mixed_v4_v6() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .times(1)
+            .returning(|_, _, stdin: &str| {
+                assert!(stdin.contains("table ip oustip"));
+                assert!(stdin.contains("table ip6 oustip"));
+                assert!(stdin.contains("192.168.0.0/24"));
+                assert!(stdin.contains("2001:db8::/32"));
+                Ok(success_output(""))
+            });
+
+        let ips: Vec<IpNet> = vec![
+            "192.168.0.0/24".parse().unwrap(),
+            "2001:db8::/32".parse().unwrap(),
+        ];
+        let result = apply_rules_mock(&backend, &mock, &ips, FilterMode::Conntrack);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_apply_rules_empty_list() {
+        let backend = NftablesBackend::new();
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute_with_stdin()
+            .times(1)
+            .returning(|_, _, stdin: &str| {
+                assert!(stdin.contains("table ip oustip"));
+                assert!(!stdin.contains("elements"));
+                Ok(success_output(""))
+            });
+
+        let ips: Vec<IpNet> = vec![];
+        let result = apply_rules_mock(&backend, &mock, &ips, FilterMode::Conntrack);
+        assert!(result.is_ok());
     }
 }

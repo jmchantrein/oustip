@@ -1,0 +1,27 @@
+language: en
+backend: auto
+mode: conntrack
+preset: minimal
+
+blocklists: []
+
+allowlist:
+  - 127.0.0.1
+  - 10.0.0.0/8
+
+auto_allowlist:
+  cloudflare: false
+  github: false
+  google_cloud: false
+  aws: false
+  fastly: false
+
+alerts:
+  gotify:
+    enabled: false
+  email:
+    enabled: false
+  webhook:
+    enabled: false
+
+update_interval: "4h"

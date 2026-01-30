@@ -8,10 +8,11 @@ use std::process::{Command, Stdio};
 use tracing::{debug, info};
 
 use super::{
-    exec_cmd, ip6tables_path, ip6tables_restore_path, ip6tables_save_path, iptables_path,
-    iptables_restore_path, iptables_save_path, ipset_path, validate_entry_count, FirewallBackend,
-    FirewallStats,
+    exec_cmd, exec_cmd_with_executor, ip6tables_path, ip6tables_restore_path, ip6tables_save_path,
+    iptables_path, iptables_restore_path, iptables_save_path, ipset_path, validate_entry_count,
+    FirewallBackend, FirewallStats,
 };
+use crate::cmd_abstraction::CommandExecutor;
 use crate::config::FilterMode;
 
 const CHAIN_INPUT: &str = "OUSTIP-INPUT";
@@ -345,6 +346,129 @@ impl IptablesBackend {
     /// Check if IPv6 ipset exists
     fn ipset_exists_v6(&self) -> bool {
         exec_cmd(ipset_path(), &["list", IPSET_NAME_V6]).is_ok()
+    }
+
+    // =========================================================================
+    // Executor-based methods for testability
+    // =========================================================================
+
+    /// Check if our IPv4 chains exist (with executor injection)
+    pub fn chains_exist_with_executor<E: CommandExecutor>(&self, executor: &E) -> bool {
+        exec_cmd_with_executor(executor, iptables_path(), &["-L", CHAIN_INPUT]).is_ok()
+    }
+
+    /// Check if our IPv6 chains exist (with executor injection)
+    pub fn chains_exist_v6_with_executor<E: CommandExecutor>(&self, executor: &E) -> bool {
+        exec_cmd_with_executor(executor, ip6tables_path(), &["-L", CHAIN_INPUT_V6]).is_ok()
+    }
+
+    /// Check if IPv4 ipset exists (with executor injection)
+    pub fn ipset_exists_with_executor<E: CommandExecutor>(&self, executor: &E) -> bool {
+        exec_cmd_with_executor(executor, ipset_path(), &["list", IPSET_NAME]).is_ok()
+    }
+
+    /// Check if IPv6 ipset exists (with executor injection)
+    pub fn ipset_exists_v6_with_executor<E: CommandExecutor>(&self, executor: &E) -> bool {
+        exec_cmd_with_executor(executor, ipset_path(), &["list", IPSET_NAME_V6]).is_ok()
+    }
+
+    /// Check if IP is blocked (with executor injection)
+    pub fn is_blocked_with_executor<E: CommandExecutor>(&self, executor: &E, ip: &IpNet) -> Result<bool> {
+        let ipset_name = match ip {
+            IpNet::V4(_) => IPSET_NAME,
+            IpNet::V6(_) => IPSET_NAME_V6,
+        };
+        let result = exec_cmd_with_executor(executor, ipset_path(), &["test", ipset_name, &ip.to_string()]);
+        Ok(result.is_ok())
+    }
+
+    /// Get stats (with executor injection)
+    pub fn get_stats_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<FirewallStats> {
+        let mut stats = FirewallStats::default();
+
+        // Get IPv4 stats from INPUT chain
+        if let Ok(output) = exec_cmd_with_executor(executor, iptables_path(), &["-L", CHAIN_INPUT, "-v", "-n"]) {
+            for line in output.lines() {
+                if line.contains("DROP") && line.contains(IPSET_NAME) {
+                    if let Some((packets, bytes)) = parse_iptables_counters(line) {
+                        stats.packets_blocked += packets;
+                        stats.bytes_blocked += bytes;
+                    }
+                }
+            }
+        }
+
+        // Get IPv4 stats from FORWARD chain
+        if let Ok(output) = exec_cmd_with_executor(executor, iptables_path(), &["-L", CHAIN_FORWARD, "-v", "-n"]) {
+            for line in output.lines() {
+                if line.contains("DROP") && line.contains(IPSET_NAME) {
+                    if let Some((packets, bytes)) = parse_iptables_counters(line) {
+                        stats.packets_blocked += packets;
+                        stats.bytes_blocked += bytes;
+                    }
+                }
+            }
+        }
+
+        // Get IPv6 stats from INPUT chain
+        if let Ok(output) = exec_cmd_with_executor(executor, ip6tables_path(), &["-L", CHAIN_INPUT_V6, "-v", "-n"]) {
+            for line in output.lines() {
+                if line.contains("DROP") && line.contains(IPSET_NAME_V6) {
+                    if let Some((packets, bytes)) = parse_iptables_counters(line) {
+                        stats.packets_blocked += packets;
+                        stats.bytes_blocked += bytes;
+                    }
+                }
+            }
+        }
+
+        // Get IPv6 stats from FORWARD chain
+        if let Ok(output) = exec_cmd_with_executor(executor, ip6tables_path(), &["-L", CHAIN_FORWARD_V6, "-v", "-n"]) {
+            for line in output.lines() {
+                if line.contains("DROP") && line.contains(IPSET_NAME_V6) {
+                    if let Some((packets, bytes)) = parse_iptables_counters(line) {
+                        stats.packets_blocked += packets;
+                        stats.bytes_blocked += bytes;
+                    }
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// Get entry count (with executor injection)
+    pub fn entry_count_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<usize> {
+        let mut total_count = 0usize;
+
+        // Count IPv4 entries
+        if let Ok(output) = exec_cmd_with_executor(executor, ipset_path(), &["list", IPSET_NAME]) {
+            total_count += output
+                .lines()
+                .skip_while(|line| !line.starts_with("Members:"))
+                .skip(1)
+                .filter(|line| !line.is_empty())
+                .count();
+        }
+
+        // Count IPv6 entries
+        if let Ok(output) = exec_cmd_with_executor(executor, ipset_path(), &["list", IPSET_NAME_V6]) {
+            total_count += output
+                .lines()
+                .skip_while(|line| !line.starts_with("Members:"))
+                .skip(1)
+                .filter(|line| !line.is_empty())
+                .count();
+        }
+
+        Ok(total_count)
+    }
+
+    /// Check if rules are active (with executor injection)
+    pub fn is_active_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<bool> {
+        let v4_active = self.chains_exist_with_executor(executor) && self.ipset_exists_with_executor(executor);
+        let v6_active = self.chains_exist_v6_with_executor(executor) && self.ipset_exists_v6_with_executor(executor);
+        Ok(v4_active || v6_active)
     }
 }
 
@@ -1346,5 +1470,616 @@ COMMIT
         assert!(iptables_rules.contains("*filter"));
         assert!(iptables_rules.contains("OUSTIP-INPUT"));
         assert!(iptables_rules.contains("COMMIT"));
+    }
+}
+
+// =============================================================================
+// MockCommandExecutor-based tests
+// =============================================================================
+#[cfg(test)]
+mod mock_executor_tests {
+    use super::*;
+    use anyhow::Result;
+    use mockall::automock;
+
+    /// Command output for testing
+    #[derive(Debug, Clone, Default)]
+    struct CmdOutput {
+        stdout: String,
+        stderr: String,
+        success: bool,
+    }
+
+    /// Trait for command execution (test-only)
+    #[automock]
+    trait CmdExecutor: Send + Sync {
+        fn execute(&self, cmd: &str, args: &[String]) -> Result<CmdOutput>;
+        fn execute_with_stdin(&self, cmd: &str, args: &[String], stdin: &str) -> Result<CmdOutput>;
+    }
+
+    fn args_to_vec(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn success_output(stdout: &str) -> CmdOutput {
+        CmdOutput {
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+            success: true,
+        }
+    }
+
+    fn failure_output(stderr: &str) -> CmdOutput {
+        CmdOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            success: false,
+        }
+    }
+
+    fn args_has(args: &[String], val: &str) -> bool {
+        args.iter().any(|a| a == val)
+    }
+
+    // Helper functions for executor-based operations
+    fn exec_cmd_mock<E: CmdExecutor>(executor: &E, cmd: &str, args: &[&str]) -> Result<String> {
+        let args_vec = args_to_vec(args);
+        let output = executor.execute(cmd, &args_vec)?;
+        if output.success {
+            Ok(output.stdout)
+        } else {
+            anyhow::bail!("{} failed: {}", cmd, output.stderr)
+        }
+    }
+
+    fn chains_exist_mock<E: CmdExecutor>(executor: &E) -> bool {
+        exec_cmd_mock(executor, iptables_path(), &["-L", CHAIN_INPUT]).is_ok()
+    }
+
+    fn chains_exist_v6_mock<E: CmdExecutor>(executor: &E) -> bool {
+        exec_cmd_mock(executor, ip6tables_path(), &["-L", CHAIN_INPUT_V6]).is_ok()
+    }
+
+    fn ipset_exists_mock<E: CmdExecutor>(executor: &E) -> bool {
+        exec_cmd_mock(executor, ipset_path(), &["list", IPSET_NAME]).is_ok()
+    }
+
+    fn ipset_exists_v6_mock<E: CmdExecutor>(executor: &E) -> bool {
+        exec_cmd_mock(executor, ipset_path(), &["list", IPSET_NAME_V6]).is_ok()
+    }
+
+    fn is_blocked_mock<E: CmdExecutor>(executor: &E, ip: &IpNet) -> Result<bool> {
+        let ipset_name = match ip {
+            IpNet::V4(_) => IPSET_NAME,
+            IpNet::V6(_) => IPSET_NAME_V6,
+        };
+        let result = exec_cmd_mock(executor, ipset_path(), &["test", ipset_name, &ip.to_string()]);
+        Ok(result.is_ok())
+    }
+
+    fn get_stats_mock<E: CmdExecutor>(executor: &E) -> Result<FirewallStats> {
+        let mut stats = FirewallStats::default();
+
+        // Get IPv4 stats from INPUT chain
+        if let Ok(output) = exec_cmd_mock(executor, iptables_path(), &["-L", CHAIN_INPUT, "-v", "-n"]) {
+            for line in output.lines() {
+                if line.contains("DROP") && line.contains(IPSET_NAME) {
+                    if let Some((packets, bytes)) = parse_iptables_counters(line) {
+                        stats.packets_blocked += packets;
+                        stats.bytes_blocked += bytes;
+                    }
+                }
+            }
+        }
+
+        // Get IPv4 stats from FORWARD chain
+        if let Ok(output) = exec_cmd_mock(executor, iptables_path(), &["-L", CHAIN_FORWARD, "-v", "-n"]) {
+            for line in output.lines() {
+                if line.contains("DROP") && line.contains(IPSET_NAME) {
+                    if let Some((packets, bytes)) = parse_iptables_counters(line) {
+                        stats.packets_blocked += packets;
+                        stats.bytes_blocked += bytes;
+                    }
+                }
+            }
+        }
+
+        // Get IPv6 stats
+        if let Ok(output) = exec_cmd_mock(executor, ip6tables_path(), &["-L", CHAIN_INPUT_V6, "-v", "-n"]) {
+            for line in output.lines() {
+                if line.contains("DROP") && line.contains(IPSET_NAME_V6) {
+                    if let Some((packets, bytes)) = parse_iptables_counters(line) {
+                        stats.packets_blocked += packets;
+                        stats.bytes_blocked += bytes;
+                    }
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    fn entry_count_mock<E: CmdExecutor>(executor: &E) -> Result<usize> {
+        let mut total_count = 0usize;
+
+        // Count IPv4 entries
+        if let Ok(output) = exec_cmd_mock(executor, ipset_path(), &["list", IPSET_NAME]) {
+            total_count += output
+                .lines()
+                .skip_while(|line| !line.starts_with("Members:"))
+                .skip(1)
+                .filter(|line| !line.is_empty())
+                .count();
+        }
+
+        // Count IPv6 entries
+        if let Ok(output) = exec_cmd_mock(executor, ipset_path(), &["list", IPSET_NAME_V6]) {
+            total_count += output
+                .lines()
+                .skip_while(|line| !line.starts_with("Members:"))
+                .skip(1)
+                .filter(|line| !line.is_empty())
+                .count();
+        }
+
+        Ok(total_count)
+    }
+
+    fn is_active_mock<E: CmdExecutor>(executor: &E) -> Result<bool> {
+        let v4_active = chains_exist_mock(executor) && ipset_exists_mock(executor);
+        let v6_active = chains_exist_v6_mock(executor) && ipset_exists_v6_mock(executor);
+        Ok(v4_active || v6_active)
+    }
+
+    // =========================================================================
+    // Mock tests for chains_exist
+    // =========================================================================
+
+    #[test]
+    fn test_chains_exist_v4_success() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT...")));
+
+        assert!(chains_exist_mock(&mock));
+    }
+
+    #[test]
+    fn test_chains_exist_v4_not_found() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(1)
+            .returning(|_, _| Ok(failure_output("iptables: No chain by that name")));
+
+        assert!(!chains_exist_mock(&mock));
+    }
+
+    #[test]
+    fn test_chains_exist_v6_success() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ip6tables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT_V6))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT6...")));
+
+        assert!(chains_exist_v6_mock(&mock));
+    }
+
+    #[test]
+    fn test_chains_exist_v6_not_found() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(1)
+            .returning(|_, _| Ok(failure_output("ip6tables: No chain by that name")));
+
+        assert!(!chains_exist_v6_mock(&mock));
+    }
+
+    // =========================================================================
+    // Mock tests for ipset_exists
+    // =========================================================================
+
+    #[test]
+    fn test_ipset_exists_v4_success() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "list") && args_has(args, IPSET_NAME))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Name: oustip_blocklist\nType: hash:net\nMembers:\n192.168.1.0/24")));
+
+        assert!(ipset_exists_mock(&mock));
+    }
+
+    #[test]
+    fn test_ipset_exists_v4_not_found() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(1)
+            .returning(|_, _| Ok(failure_output("ipset: The set with the given name does not exist")));
+
+        assert!(!ipset_exists_mock(&mock));
+    }
+
+    #[test]
+    fn test_ipset_exists_v6_success() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "list") && args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Name: oustip_blocklist6\nType: hash:net")));
+
+        assert!(ipset_exists_v6_mock(&mock));
+    }
+
+    // =========================================================================
+    // Mock tests for is_blocked
+    // =========================================================================
+
+    #[test]
+    fn test_is_blocked_ipv4_found() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "test") && args_has(args, IPSET_NAME))
+            .times(1)
+            .returning(|_, _| Ok(success_output("192.168.1.0/24 is in set oustip_blocklist")));
+
+        let ip: IpNet = "192.168.1.0/24".parse().unwrap();
+        let result = is_blocked_mock(&mock, &ip);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_blocked_ipv4_not_found() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(1)
+            .returning(|_, _| Ok(failure_output("10.0.0.0/8 is NOT in set oustip_blocklist")));
+
+        let ip: IpNet = "10.0.0.0/8".parse().unwrap();
+        let result = is_blocked_mock(&mock, &ip);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_is_blocked_ipv6_found() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "test") && args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| Ok(success_output("2001:db8::/32 is in set oustip_blocklist6")));
+
+        let ip: IpNet = "2001:db8::/32".parse().unwrap();
+        let result = is_blocked_mock(&mock, &ip);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_blocked_ipv6_not_found() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(1)
+            .returning(|_, _| Ok(failure_output("2001:db9::/32 is NOT in set oustip_blocklist6")));
+
+        let ip: IpNet = "2001:db9::/32".parse().unwrap();
+        let result = is_blocked_mock(&mock, &ip);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    // =========================================================================
+    // Mock tests for get_stats
+    // =========================================================================
+
+    #[test]
+    fn test_get_stats_ipv4_only() {
+        let mut mock = MockCmdExecutor::new();
+
+        // Mock INPUT chain stats
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, CHAIN_INPUT) && args_has(args, "-v"))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output(
+                    "Chain OUSTIP-INPUT (1 references)\n\
+                     pkts bytes target     prot opt in     out     source               destination\n\
+                       100  5000 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set oustip_blocklist src\n\
+                       100  5000 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set oustip_blocklist src"
+                ))
+            });
+
+        // Mock FORWARD chain stats
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, CHAIN_FORWARD) && args_has(args, "-v"))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output(
+                    "Chain OUSTIP-FORWARD (1 references)\n\
+                     pkts bytes target     prot opt in     out     source               destination\n\
+                        50  2500 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set oustip_blocklist src"
+                ))
+            });
+
+        // Mock IPv6 chains (return failure - no IPv6)
+        mock.expect_execute()
+            .withf(|cmd, _| cmd.ends_with("ip6tables"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        let result = get_stats_mock(&mock);
+        assert!(result.is_ok());
+        let stats = result.unwrap();
+        assert_eq!(stats.packets_blocked, 150); // 100 + 50
+        assert_eq!(stats.bytes_blocked, 7500);  // 5000 + 2500
+    }
+
+    #[test]
+    fn test_get_stats_no_rules() {
+        let mut mock = MockCmdExecutor::new();
+
+        // All chains fail (no rules)
+        mock.expect_execute()
+            .times(3)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        let result = get_stats_mock(&mock);
+        assert!(result.is_ok());
+        let stats = result.unwrap();
+        assert_eq!(stats.packets_blocked, 0);
+        assert_eq!(stats.bytes_blocked, 0);
+    }
+
+    #[test]
+    fn test_get_stats_with_suffixes() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, CHAIN_INPUT))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output(
+                    "  10K  500M DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set oustip_blocklist src"
+                ))
+            });
+
+        mock.expect_execute()
+            .times(2)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        let result = get_stats_mock(&mock);
+        assert!(result.is_ok());
+        let stats = result.unwrap();
+        assert_eq!(stats.packets_blocked, 10_000);
+        assert_eq!(stats.bytes_blocked, 500_000_000);
+    }
+
+    // =========================================================================
+    // Mock tests for entry_count
+    // =========================================================================
+
+    #[test]
+    fn test_entry_count_ipv4_only() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output(
+                    "Name: oustip_blocklist\n\
+                     Type: hash:net\n\
+                     Revision: 6\n\
+                     Header: family inet hashsize 1024 maxelem 65536\n\
+                     Size in memory: 568\n\
+                     References: 2\n\
+                     Number of entries: 3\n\
+                     Members:\n\
+                     192.168.1.0/24\n\
+                     10.0.0.0/8\n\
+                     172.16.0.0/12"
+                ))
+            });
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("set not found")));
+
+        let result = entry_count_mock(&mock);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3);
+    }
+
+    #[test]
+    fn test_entry_count_mixed_v4_v6() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output(
+                    "Name: oustip_blocklist\n\
+                     Members:\n\
+                     192.168.1.0/24\n\
+                     10.0.0.0/8"
+                ))
+            });
+
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| {
+                Ok(success_output(
+                    "Name: oustip_blocklist6\n\
+                     Members:\n\
+                     2001:db8::/32"
+                ))
+            });
+
+        let result = entry_count_mock(&mock);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3); // 2 IPv4 + 1 IPv6
+    }
+
+    #[test]
+    fn test_entry_count_empty_sets() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(2)
+            .returning(|_, _| {
+                Ok(success_output(
+                    "Name: oustip_blocklist\n\
+                     Members:"
+                ))
+            });
+
+        let result = entry_count_mock(&mock);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn test_entry_count_no_sets() {
+        let mut mock = MockCmdExecutor::new();
+
+        mock.expect_execute()
+            .times(2)
+            .returning(|_, _| Ok(failure_output("set not found")));
+
+        let result = entry_count_mock(&mock);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    // =========================================================================
+    // Mock tests for is_active
+    // =========================================================================
+
+    #[test]
+    fn test_is_active_both_present() {
+        let mut mock = MockCmdExecutor::new();
+
+        // is_active_mock checks:
+        // 1. chains_exist_mock (iptables -L OUSTIP-INPUT)
+        // 2. ipset_exists_mock (ipset list oustip_blocklist)
+        // 3. chains_exist_v6_mock (ip6tables -L OUSTIP-INPUT6) - always called
+        // 4. ipset_exists_v6_mock (ipset list oustip_blocklist6) - only if v6 chain exists
+
+        // IPv4 chain exists
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT")));
+
+        // IPv4 ipset exists
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Name: oustip_blocklist")));
+
+        // IPv6 chain check (still happens even if v4 is active)
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ip6tables") && args_has(args, "-L"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        // Since v6 chain doesn't exist, ipset_exists_v6_mock is NOT called (short-circuit &&)
+
+        let result = is_active_mock(&mock);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_active_v4_only() {
+        let mut mock = MockCmdExecutor::new();
+
+        // IPv4 chain exists
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, "-L"))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT")));
+
+        // IPv4 ipset exists
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Name: oustip_blocklist")));
+
+        // IPv6 chain doesn't exist (short-circuits so ipset6 check is skipped)
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ip6tables") && args_has(args, "-L"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        let result = is_active_mock(&mock);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_is_active_none() {
+        let mut mock = MockCmdExecutor::new();
+
+        // IPv4 chain doesn't exist (short-circuits so ipset check is skipped)
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, "-L"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        // IPv6 chain doesn't exist (short-circuits so ipset6 check is skipped)
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ip6tables") && args_has(args, "-L"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        let result = is_active_mock(&mock);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_is_active_chain_exists_but_no_ipset() {
+        let mut mock = MockCmdExecutor::new();
+
+        // IPv4 chain exists
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, "-L"))
+            .times(1)
+            .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT")));
+
+        // IPv4 ipset does NOT exist
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("set not found")));
+
+        // IPv6 chain does NOT exist (short-circuits so ipset6 check is skipped)
+        mock.expect_execute()
+            .withf(|cmd, args| cmd.ends_with("ip6tables") && args_has(args, "-L"))
+            .times(1)
+            .returning(|_, _| Ok(failure_output("chain not found")));
+
+        let result = is_active_mock(&mock);
+        assert!(result.is_ok());
+        // Not active because chain exists but ipset doesn't (for v4), and v6 chain doesn't exist
+        assert!(!result.unwrap());
     }
 }

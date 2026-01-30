@@ -1,4 +1,4 @@
-.PHONY: build release test clean fmt clippy docker install uninstall
+.PHONY: build release test clean fmt clippy docker install uninstall test-integration-docker
 
 # Default target
 all: build
@@ -105,3 +105,11 @@ help:
 	@echo "  clean        - Clean build artifacts"
 	@echo "  audit        - Security audit"
 	@echo "  doc          - Generate documentation"
+	@echo "  test-integration-docker - Run integration tests in Docker"
+
+# Integration tests in Docker (requires Docker)
+test-integration-docker: release
+	docker build -t oustip-integration -f tests/Dockerfile.integration .
+	docker run --rm --privileged --cap-add NET_ADMIN --cap-add NET_RAW \
+		-v $(PWD)/target/x86_64-unknown-linux-musl/release/oustip:/usr/local/bin/oustip:ro \
+		oustip-integration /tests/run-all.sh
