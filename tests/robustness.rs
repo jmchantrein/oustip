@@ -179,14 +179,42 @@ async fn test_concurrent_operations() {
 /// Test that YAML parsing handles malformed input
 #[test]
 fn test_yaml_malformed_input() {
-    // Invalid YAML should fail gracefully
+    use serde::Deserialize;
+
+    // Invalid YAML should fail gracefully - use String as target type
     let invalid_yaml = "{{{{not valid yaml";
-    let result: Result<serde_yaml::Value, _> = serde_yaml::from_str(invalid_yaml);
+    let result: Result<String, _> = serde_saphyr::from_str(invalid_yaml);
     assert!(result.is_err());
 
-    // Deeply nested YAML
+    // Deeply nested YAML - use simple struct to test parsing
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level4 {
+        e: String,
+    }
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level3 {
+        d: Level4,
+    }
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level2 {
+        c: Level3,
+    }
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level1 {
+        b: Level2,
+    }
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct DeepNested {
+        a: Level1,
+    }
+
     let deep_yaml = "a:\n  b:\n    c:\n      d:\n        e: value";
-    let result: Result<serde_yaml::Value, _> = serde_yaml::from_str(deep_yaml);
+    let result: Result<DeepNested, _> = serde_saphyr::from_str(deep_yaml);
     assert!(result.is_ok());
 }
 

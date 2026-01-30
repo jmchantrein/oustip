@@ -35,17 +35,37 @@ pub enum Commands {
         /// Use a preset configuration (minimal, recommended, full, paranoid)
         #[arg(long)]
         preset: Option<String>,
+
+        /// Headless mode: auto-detect interfaces, no interaction
+        #[arg(long)]
+        headless: bool,
+
+        /// Use existing config file (skip detection)
+        #[arg(long)]
+        config_file: Option<PathBuf>,
     },
 
     /// Update blocklists and apply firewall rules
     Update {
-        /// Use a preset configuration (overrides config file)
-        #[arg(long)]
-        preset: Option<String>,
+        /// Update target (default: all)
+        #[command(subcommand)]
+        target: Option<UpdateTarget>,
 
         /// Dry-run mode: fetch and process but don't apply firewall rules
         #[arg(long)]
         dry_run: bool,
+    },
+
+    /// Manage network interfaces
+    Interfaces {
+        #[command(subcommand)]
+        action: InterfacesAction,
+    },
+
+    /// Manage presets
+    Presets {
+        #[command(subcommand)]
+        action: PresetsAction,
     },
 
     /// Show blocking statistics
@@ -197,6 +217,49 @@ pub enum Ipv6Action {
     Status,
 }
 
+/// Update target for partial updates
+#[derive(Subcommand, Clone)]
+pub enum UpdateTarget {
+    /// Reload presets.yaml definitions
+    Presets,
+    /// Download blocklists and allowlists from URLs
+    Lists,
+    /// Reload config.yaml and apply firewall rules
+    Config,
+}
+
+/// Interface management actions
+#[derive(Subcommand)]
+pub enum InterfacesAction {
+    /// Detect network interfaces and suggest configuration
+    Detect,
+}
+
+/// Presets management actions
+#[derive(Subcommand)]
+pub enum PresetsAction {
+    /// List all available presets (blocklist and allowlist)
+    List {
+        /// Show only blocklist presets
+        #[arg(long)]
+        blocklist: bool,
+        /// Show only allowlist presets
+        #[arg(long)]
+        allowlist: bool,
+    },
+    /// Show details of a specific preset
+    Show {
+        /// Preset name
+        name: String,
+        /// Show blocklist preset (default if ambiguous)
+        #[arg(long)]
+        blocklist: bool,
+        /// Show allowlist preset
+        #[arg(long)]
+        allowlist: bool,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,8 +281,8 @@ mod tests {
     fn test_cli_update_command() {
         let cli = Cli::try_parse_from(["oustip", "update"]).unwrap();
         match cli.command {
-            Commands::Update { preset, dry_run } => {
-                assert!(preset.is_none());
+            Commands::Update { target, dry_run } => {
+                assert!(target.is_none());
                 assert!(!dry_run);
             }
             _ => panic!("Expected Update command"),
@@ -227,11 +290,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_update_with_preset() {
-        let cli = Cli::try_parse_from(["oustip", "update", "--preset", "minimal"]).unwrap();
+    fn test_cli_update_with_target() {
+        let cli = Cli::try_parse_from(["oustip", "update", "presets"]).unwrap();
         match cli.command {
-            Commands::Update { preset, dry_run } => {
-                assert_eq!(preset, Some("minimal".to_string()));
+            Commands::Update { target, dry_run } => {
+                assert!(matches!(target, Some(UpdateTarget::Presets)));
                 assert!(!dry_run);
             }
             _ => panic!("Expected Update command"),
@@ -247,6 +310,28 @@ mod tests {
             }
             _ => panic!("Expected Update command"),
         }
+    }
+
+    #[test]
+    fn test_cli_interfaces_detect() {
+        let cli = Cli::try_parse_from(["oustip", "interfaces", "detect"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Interfaces {
+                action: InterfacesAction::Detect
+            }
+        ));
+    }
+
+    #[test]
+    fn test_cli_presets_list() {
+        let cli = Cli::try_parse_from(["oustip", "presets", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Presets {
+                action: PresetsAction::List { .. }
+            }
+        ));
     }
 
     #[test]
@@ -359,8 +444,25 @@ mod tests {
     fn test_cli_install_with_preset() {
         let cli = Cli::try_parse_from(["oustip", "install", "--preset", "paranoid"]).unwrap();
         match cli.command {
-            Commands::Install { preset } => {
+            Commands::Install {
+                preset,
+                headless,
+                config_file,
+            } => {
                 assert_eq!(preset, Some("paranoid".to_string()));
+                assert!(!headless);
+                assert!(config_file.is_none());
+            }
+            _ => panic!("Expected Install command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_install_headless() {
+        let cli = Cli::try_parse_from(["oustip", "install", "--headless"]).unwrap();
+        match cli.command {
+            Commands::Install { headless, .. } => {
+                assert!(headless);
             }
             _ => panic!("Expected Install command"),
         }

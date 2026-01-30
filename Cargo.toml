@@ -25,7 +25,7 @@ clap = { version = "4", features = ["derive"] }
 
 # Config
 serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
+serde-saphyr = "0.0"
 serde_json = "1"
 
 # Logging

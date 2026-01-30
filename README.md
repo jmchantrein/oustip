@@ -13,7 +13,7 @@
 
 OustIP is a high-performance tool for blocking malicious IPs on Linux gateways and routers. Written in Rust for memory safety, zero garbage collection pauses, and minimal attack surface.
 
-[Documentation Francaise / French Documentation](README_FR.md)
+[Documentation Francaise / French Documentation](README_FR.md) | [API Documentation](https://jmchantrein.github.io/oustip/)
 
 ## Features
 
@@ -78,13 +78,26 @@ services:
 
 ```bash
 # Core commands
-oustip install                   # Install OustIP
+oustip install                   # Install OustIP (interactive)
+oustip install --headless        # Install with auto-detected interfaces
 oustip install --preset paranoid # Install with specific preset
-oustip update                    # Update blocklists and apply rules
-oustip update --preset minimal   # Use specific preset for this run
+oustip install --config-file /path/to/config.yaml  # Install with existing config
+oustip update                    # Full update: fetch lists + apply rules
+oustip update presets            # Reload presets.yaml definitions
+oustip update lists              # Download blocklists and allowlists
+oustip update config             # Reload config.yaml and apply firewall rules
 oustip update --dry-run          # Dry-run: fetch lists but don't apply rules
 oustip stats                     # Show blocking statistics
 oustip status                    # Show current status
+
+# Interface detection
+oustip interfaces detect         # Detect network interfaces and suggest modes
+
+# Presets management
+oustip presets list              # List all available presets
+oustip presets list --blocklist  # List blocklist presets only
+oustip presets list --allowlist  # List allowlist presets only
+oustip presets show <name>       # Show details of a specific preset
 
 # Enable/disable
 oustip enable                    # Enable blocking
@@ -143,15 +156,21 @@ oustip uninstall                # Remove everything
 
 ## Configuration
 
-Configuration file: `/etc/oustip/config.yaml`
+OustIP uses two configuration files:
+- `/etc/oustip/config.yaml` - Main configuration (interfaces, alerts, settings)
+- `/etc/oustip/presets.yaml` - Blocklist and allowlist sources and presets
+
+After editing files, run the appropriate command:
+- `oustip update config` - After editing config.yaml
+- `oustip update presets && oustip update lists` - After editing presets.yaml
+
+### Interface-Based Configuration (config.yaml)
 
 ```yaml
 # Language (en, fr)
 language: en
 
 # Firewall backend (auto, iptables, nftables)
-# auto: detect nftables first, then iptables
-# nftables is recommended for performance
 backend: auto
 
 # Filtering mode
@@ -159,36 +178,35 @@ backend: auto
 # - conntrack: after conntrack (allows responses to outbound connections)
 mode: conntrack
 
-# Alert on outbound connections to blocked IPs (conntrack mode only)
-# Useful to detect potential compromises on the local network
-alert_outbound_to_blocklist: true
-
 # Update interval for systemd timer (e.g., 6h, 12h, 1d)
-update_interval: "6h"
+update_interval: "4h"
 
-# Preset (minimal, recommended, full, paranoid)
-preset: recommended
+# Per-interface configuration
+# Use 'oustip interfaces detect' to auto-detect interfaces
+interfaces:
+  # WAN interface - exposed to internet, full blocklist protection
+  eth0:
+    mode: wan
+    blocklist_preset: paranoid    # Block suspicious IPs from internet
+    allowlist_preset: cdn_common  # Allow CDN providers (Cloudflare, GitHub, Fastly)
 
-# Blocklist sources
-blocklists:
-  - name: firehol_level1
-    url: https://iplists.firehol.org/files/firehol_level1.netset
-    enabled: true
-  # ... more lists
+  # LAN interface - internal network, monitor outbound traffic
+  eth1:
+    mode: lan
+    allowlist_preset: rfc1918     # Allow private networks
+    outbound_monitor:             # Monitor for compromise detection
+      blocklist_preset: recommended
+      action: alert               # alert, block, block_and_alert
 
-# Auto-allowlist CDN providers
-auto_allowlist:
-  cloudflare: true
-  github: true
-  google_cloud: false
-  aws: false
-  fastly: false
+  # Trusted interfaces - no filtering (containers, VPN tunnels)
+  docker0:
+    mode: trusted
+  wg0:
+    mode: trusted
 
-# Manual allowlist
-allowlist:
-  - "192.168.0.0/16"
-  - "10.0.0.0/8"
-  - "172.16.0.0/12"
+# IPv6 configuration
+ipv6:
+  boot_state: unchanged  # disabled, enabled, unchanged
 
 # Alert destinations
 alerts:
@@ -202,15 +220,79 @@ alerts:
     smtp_host: "smtp.example.com"
     smtp_port: 587
     smtp_user: "alerts@example.com"
-    smtp_password: ""            # Can be set directly here
-    smtp_password_env: "MY_SMTP_PASS" # Or via environment variable
+    smtp_password: ""            # Can be set via OUSTIP_SMTP_PASSWORD env var
     from: "oustip@example.com"
-    to: ["admin@example.com"]
+    to: "admin@example.com"
   webhook:
     enabled: false
     url: ""
-    headers: {}  # Optional custom headers
+    headers: {}
 ```
+
+### Presets Configuration (presets.yaml)
+
+```yaml
+# Blocklist sources
+blocklist_sources:
+  spamhaus_drop:
+    url: https://www.spamhaus.org/drop/drop.txt
+    description:
+      en: "Spamhaus DROP - Hijacked/leased for spam/malware"
+      fr: "Spamhaus DROP - Détournées/louées pour spam/malware"
+  # ... more sources
+
+# Blocklist presets with inheritance
+blocklist_presets:
+  minimal:
+    description:
+      en: "Production servers - near-zero false positives"
+    sources:
+      - spamhaus_drop
+      - spamhaus_edrop
+      - dshield
+
+  recommended:
+    description:
+      en: "Recommended default - good balance"
+    extends: minimal  # Inherits all sources from minimal
+    sources:
+      - firehol_level1
+      - firehol_level2
+
+# Allowlist sources (static and dynamic)
+allowlist_sources:
+  rfc1918:
+    static:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+    description:
+      en: "RFC1918 private networks"
+
+  cloudflare:
+    url: https://www.cloudflare.com/ips-v4
+    url_v6: https://www.cloudflare.com/ips-v6
+    description:
+      en: "Cloudflare CDN IP ranges"
+
+# Allowlist presets
+allowlist_presets:
+  cdn_common:
+    sources:
+      - cloudflare
+      - github
+      - fastly
+```
+
+### Interface Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `wan` | Full blocklist protection | Internet-facing interfaces |
+| `lan` | RFC1918 auto-allowed, outbound monitoring | Internal network interfaces |
+| `trusted` | No filtering | VPN tunnels, container bridges |
+
+Note: `lo` (loopback) is always trusted and cannot be configured.
 
 ### Environment Variables for Credentials
 

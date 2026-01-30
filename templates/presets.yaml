@@ -1,0 +1,241 @@
+# =============================================================================
+# OustIP Presets
+# https://github.com/jmchantrein/oustip
+#
+# This file defines blocklist and allowlist sources and presets.
+# Edit this file to customize presets or add new sources.
+# After editing, run: oustip update presets && oustip update config
+#
+# Ce fichier définit les sources de blocklists/allowlists et les presets.
+# Éditez ce fichier pour personnaliser ou ajouter des sources.
+# Après édition, exécuter: oustip update presets && oustip update config
+# =============================================================================
+
+# =============================================================================
+# BLOCKLIST SOURCES / SOURCES DE BLOCKLISTS
+# =============================================================================
+# Define all available blocklist sources here.
+# Referenced by name in presets below.
+#
+# Définir ici toutes les sources de blocklist disponibles.
+# Référencées par nom dans les presets ci-dessous.
+# =============================================================================
+
+blocklist_sources:
+  spamhaus_drop:
+    url: https://www.spamhaus.org/drop/drop.txt
+    description:
+      en: "Spamhaus DROP - Hijacked/leased for spam/malware"
+      fr: "Spamhaus DROP - Détournées/louées pour spam/malware"
+
+  spamhaus_edrop:
+    url: https://www.spamhaus.org/drop/edrop.txt
+    description:
+      en: "Spamhaus EDROP - Extended DROP list"
+      fr: "Spamhaus EDROP - Liste DROP étendue"
+
+  dshield:
+    url: https://www.dshield.org/block.txt
+    description:
+      en: "DShield - Top attacking IPs"
+      fr: "DShield - IPs les plus attaquantes"
+
+  firehol_level1:
+    url: https://iplists.firehol.org/files/firehol_level1.netset
+    description:
+      en: "FireHOL L1 - High confidence, production safe"
+      fr: "FireHOL L1 - Haute confiance, safe production"
+
+  firehol_level2:
+    url: https://iplists.firehol.org/files/firehol_level2.netset
+    description:
+      en: "FireHOL L2 - Medium confidence"
+      fr: "FireHOL L2 - Confiance moyenne"
+
+  firehol_level3:
+    url: https://iplists.firehol.org/files/firehol_level3.netset
+    description:
+      en: "FireHOL L3 - Aggressive, possible false positives"
+      fr: "FireHOL L3 - Agressif, faux positifs possibles"
+
+  firehol_level4:
+    url: https://iplists.firehol.org/files/firehol_level4.netset
+    description:
+      en: "FireHOL L4 - Research lists, expect false positives"
+      fr: "FireHOL L4 - Listes recherche, faux positifs probables"
+
+# =============================================================================
+# BLOCKLIST PRESETS / PRESETS DE BLOCKLISTS
+# =============================================================================
+# Presets define which sources to use.
+# Use 'extends' to inherit from another preset and add more sources.
+#
+# Les presets définissent quelles sources utiliser.
+# Utilisez 'extends' pour hériter d'un autre preset et ajouter des sources.
+# =============================================================================
+
+blocklist_presets:
+  minimal:
+    description:
+      en: "Production servers - near-zero false positives"
+      fr: "Serveurs production - quasi-zéro faux positifs"
+    sources:
+      - spamhaus_drop
+      - spamhaus_edrop
+      - dshield
+
+  recommended:
+    description:
+      en: "Recommended default - good balance"
+      fr: "Défaut recommandé - bon équilibre"
+    extends: minimal
+    sources:
+      - firehol_level1
+      - firehol_level2
+
+  full:
+    description:
+      en: "High security - rare false positives"
+      fr: "Haute sécurité - faux positifs rares"
+    extends: recommended
+    sources:
+      - firehol_level3
+
+  paranoid:
+    description:
+      en: "Maximum protection - expect false positives"
+      fr: "Protection maximale - faux positifs probables"
+    extends: full
+    sources:
+      - firehol_level4
+
+# =============================================================================
+# ALLOWLIST SOURCES / SOURCES D'ALLOWLISTS
+# =============================================================================
+# Static sources: inline IP ranges (no network fetch)
+# Dynamic sources: fetched from URLs (CDN providers, etc.)
+#
+# Sources statiques: plages IP inline (pas de téléchargement)
+# Sources dynamiques: téléchargées depuis URLs (fournisseurs CDN, etc.)
+# =============================================================================
+
+allowlist_sources:
+  # ---------------------------------------------------------------------------
+  # Static sources / Sources statiques
+  # ---------------------------------------------------------------------------
+  rfc1918:
+    static:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+    description:
+      en: "RFC1918 private networks"
+      fr: "Réseaux privés RFC1918"
+
+  rfc6598:
+    static:
+      - "100.64.0.0/10"
+    description:
+      en: "RFC6598 Carrier-Grade NAT"
+      fr: "RFC6598 NAT opérateur"
+
+  loopback:
+    static:
+      - "127.0.0.0/8"
+      - "::1/128"
+    description:
+      en: "Loopback addresses"
+      fr: "Adresses loopback"
+
+  link_local:
+    static:
+      - "169.254.0.0/16"
+      - "fe80::/10"
+    description:
+      en: "Link-local addresses"
+      fr: "Adresses link-local"
+
+  # ---------------------------------------------------------------------------
+  # Dynamic sources / Sources dynamiques
+  # ---------------------------------------------------------------------------
+  cloudflare:
+    url: https://www.cloudflare.com/ips-v4
+    url_v6: https://www.cloudflare.com/ips-v6
+    description:
+      en: "Cloudflare CDN IP ranges"
+      fr: "Plages IP Cloudflare CDN"
+
+  github:
+    url: https://api.github.com/meta
+    json_path: "hooks"
+    description:
+      en: "GitHub webhook/actions IPs"
+      fr: "IPs webhooks/actions GitHub"
+
+  fastly:
+    url: https://api.fastly.com/public-ip-list
+    json_path: "addresses"
+    description:
+      en: "Fastly CDN IP ranges"
+      fr: "Plages IP Fastly CDN"
+
+  # Uncomment to add AWS/GCP (large lists, may impact performance)
+  # Décommenter pour ajouter AWS/GCP (listes volumineuses)
+  #
+  # aws:
+  #   url: https://ip-ranges.amazonaws.com/ip-ranges.json
+  #   json_path: "prefixes[*].ip_prefix"
+  #   description:
+  #     en: "AWS IP ranges (large!)"
+  #     fr: "Plages IP AWS (volumineuses!)"
+  #
+  # gcp:
+  #   url: https://www.gstatic.com/ipranges/cloud.json
+  #   json_path: "prefixes[*].ipv4Prefix"
+  #   description:
+  #     en: "Google Cloud IP ranges"
+  #     fr: "Plages IP Google Cloud"
+
+# =============================================================================
+# ALLOWLIST PRESETS / PRESETS D'ALLOWLISTS
+# =============================================================================
+
+allowlist_presets:
+  rfc1918:
+    description:
+      en: "Private networks only"
+      fr: "Réseaux privés uniquement"
+    sources:
+      - rfc1918
+
+  private_full:
+    description:
+      en: "All private/reserved ranges"
+      fr: "Toutes les plages privées/réservées"
+    sources:
+      - rfc1918
+      - rfc6598
+      - link_local
+
+  cdn_cloudflare:
+    description:
+      en: "Cloudflare CDN"
+      fr: "CDN Cloudflare"
+    sources:
+      - cloudflare
+
+  cdn_github:
+    description:
+      en: "GitHub services"
+      fr: "Services GitHub"
+    sources:
+      - github
+
+  cdn_common:
+    description:
+      en: "Common CDNs (Cloudflare, GitHub, Fastly)"
+      fr: "CDNs courants (Cloudflare, GitHub, Fastly)"
+    sources:
+      - cloudflare
+      - github
+      - fastly
