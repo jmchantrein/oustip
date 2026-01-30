@@ -9,7 +9,7 @@ use tracing::{debug, info};
 
 use super::{
     exec_cmd, exec_cmd_with_executor, ip6tables_path, ip6tables_restore_path, ip6tables_save_path,
-    iptables_path, iptables_restore_path, iptables_save_path, ipset_path, validate_entry_count,
+    ipset_path, iptables_path, iptables_restore_path, iptables_save_path, validate_entry_count,
     FirewallBackend, FirewallStats,
 };
 use crate::cmd_abstraction::CommandExecutor;
@@ -38,10 +38,16 @@ impl IptablesBackend {
         let v6_ips: Vec<&IpNet> = ips.iter().filter(|ip| matches!(ip, IpNet::V6(_))).collect();
 
         // Destroy existing sets if any
-        if let Err(e) = Command::new(ipset_path()).args(["destroy", IPSET_NAME]).output() {
+        if let Err(e) = Command::new(ipset_path())
+            .args(["destroy", IPSET_NAME])
+            .output()
+        {
             debug!("Could not destroy existing ipset {}: {}", IPSET_NAME, e);
         }
-        if let Err(e) = Command::new(ipset_path()).args(["destroy", IPSET_NAME_V6]).output() {
+        if let Err(e) = Command::new(ipset_path())
+            .args(["destroy", IPSET_NAME_V6])
+            .output()
+        {
             debug!("Could not destroy existing ipset {}: {}", IPSET_NAME_V6, e);
         }
 
@@ -55,7 +61,10 @@ impl IptablesBackend {
         }
 
         // Create IPv6 set (family inet6)
-        script.push_str(&format!("create {} hash:net family inet6 -exist\n", IPSET_NAME_V6));
+        script.push_str(&format!(
+            "create {} hash:net family inet6 -exist\n",
+            IPSET_NAME_V6
+        ));
         for ip in &v6_ips {
             script.push_str(&format!("add {} {} -exist\n", IPSET_NAME_V6, ip));
         }
@@ -373,21 +382,34 @@ impl IptablesBackend {
     }
 
     /// Check if IP is blocked (with executor injection)
-    pub fn is_blocked_with_executor<E: CommandExecutor>(&self, executor: &E, ip: &IpNet) -> Result<bool> {
+    pub fn is_blocked_with_executor<E: CommandExecutor>(
+        &self,
+        executor: &E,
+        ip: &IpNet,
+    ) -> Result<bool> {
         let ipset_name = match ip {
             IpNet::V4(_) => IPSET_NAME,
             IpNet::V6(_) => IPSET_NAME_V6,
         };
-        let result = exec_cmd_with_executor(executor, ipset_path(), &["test", ipset_name, &ip.to_string()]);
+        let result = exec_cmd_with_executor(
+            executor,
+            ipset_path(),
+            &["test", ipset_name, &ip.to_string()],
+        );
         Ok(result.is_ok())
     }
 
     /// Get stats (with executor injection)
-    pub fn get_stats_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<FirewallStats> {
+    pub fn get_stats_with_executor<E: CommandExecutor>(
+        &self,
+        executor: &E,
+    ) -> Result<FirewallStats> {
         let mut stats = FirewallStats::default();
 
         // Get IPv4 stats from INPUT chain
-        if let Ok(output) = exec_cmd_with_executor(executor, iptables_path(), &["-L", CHAIN_INPUT, "-v", "-n"]) {
+        if let Ok(output) =
+            exec_cmd_with_executor(executor, iptables_path(), &["-L", CHAIN_INPUT, "-v", "-n"])
+        {
             for line in output.lines() {
                 if line.contains("DROP") && line.contains(IPSET_NAME) {
                     if let Some((packets, bytes)) = parse_iptables_counters(line) {
@@ -399,7 +421,11 @@ impl IptablesBackend {
         }
 
         // Get IPv4 stats from FORWARD chain
-        if let Ok(output) = exec_cmd_with_executor(executor, iptables_path(), &["-L", CHAIN_FORWARD, "-v", "-n"]) {
+        if let Ok(output) = exec_cmd_with_executor(
+            executor,
+            iptables_path(),
+            &["-L", CHAIN_FORWARD, "-v", "-n"],
+        ) {
             for line in output.lines() {
                 if line.contains("DROP") && line.contains(IPSET_NAME) {
                     if let Some((packets, bytes)) = parse_iptables_counters(line) {
@@ -411,7 +437,11 @@ impl IptablesBackend {
         }
 
         // Get IPv6 stats from INPUT chain
-        if let Ok(output) = exec_cmd_with_executor(executor, ip6tables_path(), &["-L", CHAIN_INPUT_V6, "-v", "-n"]) {
+        if let Ok(output) = exec_cmd_with_executor(
+            executor,
+            ip6tables_path(),
+            &["-L", CHAIN_INPUT_V6, "-v", "-n"],
+        ) {
             for line in output.lines() {
                 if line.contains("DROP") && line.contains(IPSET_NAME_V6) {
                     if let Some((packets, bytes)) = parse_iptables_counters(line) {
@@ -423,7 +453,11 @@ impl IptablesBackend {
         }
 
         // Get IPv6 stats from FORWARD chain
-        if let Ok(output) = exec_cmd_with_executor(executor, ip6tables_path(), &["-L", CHAIN_FORWARD_V6, "-v", "-n"]) {
+        if let Ok(output) = exec_cmd_with_executor(
+            executor,
+            ip6tables_path(),
+            &["-L", CHAIN_FORWARD_V6, "-v", "-n"],
+        ) {
             for line in output.lines() {
                 if line.contains("DROP") && line.contains(IPSET_NAME_V6) {
                     if let Some((packets, bytes)) = parse_iptables_counters(line) {
@@ -452,7 +486,8 @@ impl IptablesBackend {
         }
 
         // Count IPv6 entries
-        if let Ok(output) = exec_cmd_with_executor(executor, ipset_path(), &["list", IPSET_NAME_V6]) {
+        if let Ok(output) = exec_cmd_with_executor(executor, ipset_path(), &["list", IPSET_NAME_V6])
+        {
             total_count += output
                 .lines()
                 .skip_while(|line| !line.starts_with("Members:"))
@@ -466,8 +501,10 @@ impl IptablesBackend {
 
     /// Check if rules are active (with executor injection)
     pub fn is_active_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<bool> {
-        let v4_active = self.chains_exist_with_executor(executor) && self.ipset_exists_with_executor(executor);
-        let v6_active = self.chains_exist_v6_with_executor(executor) && self.ipset_exists_v6_with_executor(executor);
+        let v4_active =
+            self.chains_exist_with_executor(executor) && self.ipset_exists_with_executor(executor);
+        let v6_active = self.chains_exist_v6_with_executor(executor)
+            && self.ipset_exists_v6_with_executor(executor);
         Ok(v4_active || v6_active)
     }
 }
@@ -862,7 +899,10 @@ fn parse_human_number(s: &str) -> Option<u64> {
         (s, 1u64)
     };
 
-    num_part.parse::<u64>().ok().and_then(|n| n.checked_mul(multiplier))
+    num_part
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(multiplier))
 }
 
 #[cfg(test)]
@@ -1104,7 +1144,10 @@ mod extended_tests {
         // Test overflow at boundary
         // u64::MAX = 18446744073709551615
         // 18446744073709551615 / 1000 = 18446744073709551 (still valid for K)
-        assert_eq!(parse_human_number("18446744073709551K"), Some(18446744073709551000));
+        assert_eq!(
+            parse_human_number("18446744073709551K"),
+            Some(18446744073709551000)
+        );
         // But 18446744073709552K would overflow
         assert_eq!(parse_human_number("18446744073709552K"), None);
     }
@@ -1553,7 +1596,11 @@ mod mock_executor_tests {
             IpNet::V4(_) => IPSET_NAME,
             IpNet::V6(_) => IPSET_NAME_V6,
         };
-        let result = exec_cmd_mock(executor, ipset_path(), &["test", ipset_name, &ip.to_string()]);
+        let result = exec_cmd_mock(
+            executor,
+            ipset_path(),
+            &["test", ipset_name, &ip.to_string()],
+        );
         Ok(result.is_ok())
     }
 
@@ -1561,7 +1608,9 @@ mod mock_executor_tests {
         let mut stats = FirewallStats::default();
 
         // Get IPv4 stats from INPUT chain
-        if let Ok(output) = exec_cmd_mock(executor, iptables_path(), &["-L", CHAIN_INPUT, "-v", "-n"]) {
+        if let Ok(output) =
+            exec_cmd_mock(executor, iptables_path(), &["-L", CHAIN_INPUT, "-v", "-n"])
+        {
             for line in output.lines() {
                 if line.contains("DROP") && line.contains(IPSET_NAME) {
                     if let Some((packets, bytes)) = parse_iptables_counters(line) {
@@ -1573,7 +1622,11 @@ mod mock_executor_tests {
         }
 
         // Get IPv4 stats from FORWARD chain
-        if let Ok(output) = exec_cmd_mock(executor, iptables_path(), &["-L", CHAIN_FORWARD, "-v", "-n"]) {
+        if let Ok(output) = exec_cmd_mock(
+            executor,
+            iptables_path(),
+            &["-L", CHAIN_FORWARD, "-v", "-n"],
+        ) {
             for line in output.lines() {
                 if line.contains("DROP") && line.contains(IPSET_NAME) {
                     if let Some((packets, bytes)) = parse_iptables_counters(line) {
@@ -1585,7 +1638,11 @@ mod mock_executor_tests {
         }
 
         // Get IPv6 stats
-        if let Ok(output) = exec_cmd_mock(executor, ip6tables_path(), &["-L", CHAIN_INPUT_V6, "-v", "-n"]) {
+        if let Ok(output) = exec_cmd_mock(
+            executor,
+            ip6tables_path(),
+            &["-L", CHAIN_INPUT_V6, "-v", "-n"],
+        ) {
             for line in output.lines() {
                 if line.contains("DROP") && line.contains(IPSET_NAME_V6) {
                     if let Some((packets, bytes)) = parse_iptables_counters(line) {
@@ -1640,7 +1697,9 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT))
+            .withf(|cmd, args| {
+                cmd.ends_with("iptables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT...")));
 
@@ -1663,7 +1722,9 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ip6tables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ip6tables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT_V6)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT6...")));
 
@@ -1690,9 +1751,15 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "list") && args_has(args, IPSET_NAME))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset") && args_has(args, "list") && args_has(args, IPSET_NAME)
+            })
             .times(1)
-            .returning(|_, _| Ok(success_output("Name: oustip_blocklist\nType: hash:net\nMembers:\n192.168.1.0/24")));
+            .returning(|_, _| {
+                Ok(success_output(
+                    "Name: oustip_blocklist\nType: hash:net\nMembers:\n192.168.1.0/24",
+                ))
+            });
 
         assert!(ipset_exists_mock(&mock));
     }
@@ -1701,9 +1768,11 @@ mod mock_executor_tests {
     fn test_ipset_exists_v4_not_found() {
         let mut mock = MockCmdExecutor::new();
 
-        mock.expect_execute()
-            .times(1)
-            .returning(|_, _| Ok(failure_output("ipset: The set with the given name does not exist")));
+        mock.expect_execute().times(1).returning(|_, _| {
+            Ok(failure_output(
+                "ipset: The set with the given name does not exist",
+            ))
+        });
 
         assert!(!ipset_exists_mock(&mock));
     }
@@ -1713,7 +1782,9 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "list") && args_has(args, IPSET_NAME_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset") && args_has(args, "list") && args_has(args, IPSET_NAME_V6)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("Name: oustip_blocklist6\nType: hash:net")));
 
@@ -1729,7 +1800,9 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "test") && args_has(args, IPSET_NAME))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset") && args_has(args, "test") && args_has(args, IPSET_NAME)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("192.168.1.0/24 is in set oustip_blocklist")));
 
@@ -1758,7 +1831,9 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, "test") && args_has(args, IPSET_NAME_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset") && args_has(args, "test") && args_has(args, IPSET_NAME_V6)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("2001:db8::/32 is in set oustip_blocklist6")));
 
@@ -1772,9 +1847,11 @@ mod mock_executor_tests {
     fn test_is_blocked_ipv6_not_found() {
         let mut mock = MockCmdExecutor::new();
 
-        mock.expect_execute()
-            .times(1)
-            .returning(|_, _| Ok(failure_output("2001:db9::/32 is NOT in set oustip_blocklist6")));
+        mock.expect_execute().times(1).returning(|_, _| {
+            Ok(failure_output(
+                "2001:db9::/32 is NOT in set oustip_blocklist6",
+            ))
+        });
 
         let ip: IpNet = "2001:db9::/32".parse().unwrap();
         let result = is_blocked_mock(&mock, &ip);
@@ -1825,7 +1902,7 @@ mod mock_executor_tests {
         assert!(result.is_ok());
         let stats = result.unwrap();
         assert_eq!(stats.packets_blocked, 150); // 100 + 50
-        assert_eq!(stats.bytes_blocked, 7500);  // 5000 + 2500
+        assert_eq!(stats.bytes_blocked, 7500); // 5000 + 2500
     }
 
     #[test]
@@ -1877,7 +1954,11 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset")
+                    && args_has(args, IPSET_NAME)
+                    && !args_has(args, IPSET_NAME_V6)
+            })
             .times(1)
             .returning(|_, _| {
                 Ok(success_output(
@@ -1891,7 +1972,7 @@ mod mock_executor_tests {
                      Members:\n\
                      192.168.1.0/24\n\
                      10.0.0.0/8\n\
-                     172.16.0.0/12"
+                     172.16.0.0/12",
                 ))
             });
 
@@ -1910,14 +1991,18 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset")
+                    && args_has(args, IPSET_NAME)
+                    && !args_has(args, IPSET_NAME_V6)
+            })
             .times(1)
             .returning(|_, _| {
                 Ok(success_output(
                     "Name: oustip_blocklist\n\
                      Members:\n\
                      192.168.1.0/24\n\
-                     10.0.0.0/8"
+                     10.0.0.0/8",
                 ))
             });
 
@@ -1928,7 +2013,7 @@ mod mock_executor_tests {
                 Ok(success_output(
                     "Name: oustip_blocklist6\n\
                      Members:\n\
-                     2001:db8::/32"
+                     2001:db8::/32",
                 ))
             });
 
@@ -1941,14 +2026,12 @@ mod mock_executor_tests {
     fn test_entry_count_empty_sets() {
         let mut mock = MockCmdExecutor::new();
 
-        mock.expect_execute()
-            .times(2)
-            .returning(|_, _| {
-                Ok(success_output(
-                    "Name: oustip_blocklist\n\
-                     Members:"
-                ))
-            });
+        mock.expect_execute().times(2).returning(|_, _| {
+            Ok(success_output(
+                "Name: oustip_blocklist\n\
+                     Members:",
+            ))
+        });
 
         let result = entry_count_mock(&mock);
         assert!(result.is_ok());
@@ -1984,13 +2067,19 @@ mod mock_executor_tests {
 
         // IPv4 chain exists
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("iptables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT))
+            .withf(|cmd, args| {
+                cmd.ends_with("iptables") && args_has(args, "-L") && args_has(args, CHAIN_INPUT)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("Chain OUSTIP-INPUT")));
 
         // IPv4 ipset exists
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset")
+                    && args_has(args, IPSET_NAME)
+                    && !args_has(args, IPSET_NAME_V6)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("Name: oustip_blocklist")));
 
@@ -2019,7 +2108,11 @@ mod mock_executor_tests {
 
         // IPv4 ipset exists
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset")
+                    && args_has(args, IPSET_NAME)
+                    && !args_has(args, IPSET_NAME_V6)
+            })
             .times(1)
             .returning(|_, _| Ok(success_output("Name: oustip_blocklist")));
 
@@ -2067,7 +2160,11 @@ mod mock_executor_tests {
 
         // IPv4 ipset does NOT exist
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("ipset") && args_has(args, IPSET_NAME) && !args_has(args, IPSET_NAME_V6))
+            .withf(|cmd, args| {
+                cmd.ends_with("ipset")
+                    && args_has(args, IPSET_NAME)
+                    && !args_has(args, IPSET_NAME_V6)
+            })
             .times(1)
             .returning(|_, _| Ok(failure_output("set not found")));
 

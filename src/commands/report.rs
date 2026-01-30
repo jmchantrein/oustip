@@ -141,7 +141,10 @@ impl TextFormatter {
         if sources.is_empty() {
             return String::new();
         }
-        let mut out = format!(" SOURCES\n{}\n NAME                 IPs          ENTRIES\n", Self::DIVIDER);
+        let mut out = format!(
+            " SOURCES\n{}\n NAME                 IPs          ENTRIES\n",
+            Self::DIVIDER
+        );
         for src in sources {
             out.push_str(&format!(
                 " {:<20} {:>12} {:>12}\n",
@@ -204,11 +207,7 @@ impl MarkdownFormatter {
         let mut out = String::from("## Status\n\n| Metric | Value |\n|--------|-------|\n");
         out.push_str(&format!(
             "| Active | {} |\n",
-            if status.active {
-                "✅ Yes"
-            } else {
-                "❌ No"
-            }
+            if status.active { "✅ Yes" } else { "❌ No" }
         ));
         out.push_str(&format!("| Backend | {} |\n", status.backend));
         out.push_str(&format!(
@@ -256,9 +255,8 @@ impl MarkdownFormatter {
         if top_blocked.is_empty() {
             return String::new();
         }
-        let mut out = String::from(
-            "## Top Blocked IPs (Last 24h)\n\n| IP | Attempts |\n|----|----------|\n",
-        );
+        let mut out =
+            String::from("## Top Blocked IPs (Last 24h)\n\n| IP | Attempts |\n|----|----------|\n");
         for ip in top_blocked {
             out.push_str(&format!(
                 "| {} | {} |\n",

@@ -135,11 +135,7 @@ mod tests {
         state.add_assumed_ip("8.8.8.8"); // Duplicate
 
         // Should only have one entry
-        let count = state
-            .assumed_ips
-            .as_ref()
-            .map(|v| v.len())
-            .unwrap_or(0);
+        let count = state.assumed_ips.as_ref().map(|v| v.len()).unwrap_or(0);
         assert_eq!(count, 1);
     }
 
@@ -191,11 +187,7 @@ mod tests {
         }
 
         // Count should match
-        let count = state
-            .assumed_ips
-            .as_ref()
-            .map(|v| v.len())
-            .unwrap_or(0);
+        let count = state.assumed_ips.as_ref().map(|v| v.len()).unwrap_or(0);
         assert_eq!(count, ips.len());
     }
 

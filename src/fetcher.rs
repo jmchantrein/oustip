@@ -267,8 +267,10 @@ impl Fetcher {
 
                 // Warn if allowlist is empty due to failures
                 if all_ips.is_empty() && (ipv4_failed || ipv6_failed) {
-                    warn!("Allowlist {} returned no IPs (IPv4 failed: {}, IPv6 failed: {})",
-                          name, ipv4_failed, ipv6_failed);
+                    warn!(
+                        "Allowlist {} returned no IPs (IPv4 failed: {}, IPv6 failed: {})",
+                        name, ipv4_failed, ipv6_failed
+                    );
                 }
 
                 Ok(all_ips)
@@ -433,7 +435,11 @@ impl Fetcher {
 
                         return Ok(body);
                     }
-                    errors.push(format!("Attempt {}: HTTP {}", attempt + 1, response.status()));
+                    errors.push(format!(
+                        "Attempt {}: HTTP {}",
+                        attempt + 1,
+                        response.status()
+                    ));
                 }
                 Err(e) => {
                     errors.push(format!("Attempt {}: {}", attempt + 1, e));
@@ -441,7 +447,11 @@ impl Fetcher {
             }
         }
 
-        anyhow::bail!("Failed after {} attempts: {}", errors.len(), errors.last().unwrap_or(&"unknown".to_string()))
+        anyhow::bail!(
+            "Failed after {} attempts: {}",
+            errors.len(),
+            errors.last().unwrap_or(&"unknown".to_string())
+        )
     }
 
     /// Fetch Cloudflare IPv4 ranges
@@ -669,13 +679,17 @@ mod tests {
 
     #[test]
     fn test_ssrf_link_local() {
-        assert!(is_private_or_internal_url("http://169.254.169.254/metadata"));
+        assert!(is_private_or_internal_url(
+            "http://169.254.169.254/metadata"
+        ));
         assert!(is_private_or_internal_url("http://169.254.0.1/api"));
     }
 
     #[test]
     fn test_ssrf_internal_hostnames() {
-        assert!(is_private_or_internal_url("http://metadata.google.internal/"));
+        assert!(is_private_or_internal_url(
+            "http://metadata.google.internal/"
+        ));
         assert!(is_private_or_internal_url("http://something.internal/"));
         assert!(is_private_or_internal_url("http://myhost.local/"));
     }
@@ -934,9 +948,13 @@ also-invalid/24
     #[test]
     fn test_ssrf_cloud_metadata() {
         // Common cloud metadata endpoints
-        assert!(is_private_or_internal_url("http://169.254.169.254/latest/meta-data/"));
+        assert!(is_private_or_internal_url(
+            "http://169.254.169.254/latest/meta-data/"
+        ));
         assert!(is_private_or_internal_url("http://metadata/"));
-        assert!(is_private_or_internal_url("http://metadata.google.internal/computeMetadata/v1/"));
+        assert!(is_private_or_internal_url(
+            "http://metadata.google.internal/computeMetadata/v1/"
+        ));
     }
 
     #[test]
@@ -962,7 +980,9 @@ also-invalid/24
         // fc00::/7 - unique local addresses
         assert!(is_private_or_internal_url("http://[fc00::1]/"));
         assert!(is_private_or_internal_url("http://[fd00::1]/"));
-        assert!(is_private_or_internal_url("http://[fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]/"));
+        assert!(is_private_or_internal_url(
+            "http://[fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]/"
+        ));
     }
 
     #[test]
@@ -978,7 +998,9 @@ also-invalid/24
     fn test_ssrf_local_domain_suffixes() {
         assert!(is_private_or_internal_url("http://myserver.local/"));
         assert!(is_private_or_internal_url("http://service.internal/"));
-        assert!(is_private_or_internal_url("http://deep.nested.domain.internal/"));
+        assert!(is_private_or_internal_url(
+            "http://deep.nested.domain.internal/"
+        ));
         assert!(is_private_or_internal_url("http://printer.local/"));
     }
 
@@ -996,7 +1018,9 @@ also-invalid/24
         assert!(!is_private_or_internal_url("https://google.com/"));
         assert!(!is_private_or_internal_url("https://github.com/api"));
         assert!(!is_private_or_internal_url("https://cdn.example.com/"));
-        assert!(!is_private_or_internal_url("https://subdomain.cloudflare.com/"));
+        assert!(!is_private_or_internal_url(
+            "https://subdomain.cloudflare.com/"
+        ));
     }
 
     #[test]
@@ -1016,13 +1040,19 @@ also-invalid/24
     #[test]
     fn test_ssrf_with_auth() {
         assert!(is_private_or_internal_url("http://user:pass@localhost/"));
-        assert!(is_private_or_internal_url("http://admin:secret@192.168.1.1/"));
+        assert!(is_private_or_internal_url(
+            "http://admin:secret@192.168.1.1/"
+        ));
     }
 
     #[test]
     fn test_ssrf_with_path_and_query() {
-        assert!(is_private_or_internal_url("http://localhost/api/v1?key=value"));
-        assert!(is_private_or_internal_url("http://10.0.0.1/path/to/resource#anchor"));
+        assert!(is_private_or_internal_url(
+            "http://localhost/api/v1?key=value"
+        ));
+        assert!(is_private_or_internal_url(
+            "http://10.0.0.1/path/to/resource#anchor"
+        ));
     }
 
     // =========================================================================
@@ -1044,7 +1074,9 @@ also-invalid/24
     #[test]
     fn test_fetcher_reset_counter() {
         let fetcher = Fetcher::new().unwrap();
-        fetcher.total_downloaded.store(1000, std::sync::atomic::Ordering::Relaxed);
+        fetcher
+            .total_downloaded
+            .store(1000, std::sync::atomic::Ordering::Relaxed);
         assert_eq!(fetcher.total_downloaded(), 1000);
         fetcher.reset_counter();
         assert_eq!(fetcher.total_downloaded(), 0);
@@ -1078,7 +1110,8 @@ also-invalid/24
     fn test_parse_json_ip_list_with_objects() {
         let fetcher = Fetcher::new().unwrap();
         // AWS/Google style with nested objects
-        let json = r#"{"prefixes": [{"ipv4Prefix": "192.168.1.0/24"}, {"ipv4Prefix": "10.0.0.0/8"}]}"#;
+        let json =
+            r#"{"prefixes": [{"ipv4Prefix": "192.168.1.0/24"}, {"ipv4Prefix": "10.0.0.0/8"}]}"#;
         let result = fetcher.parse_json_ip_list(json, "prefixes");
         assert!(result.is_ok());
         let ips = result.unwrap();

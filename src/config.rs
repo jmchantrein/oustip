@@ -202,16 +202,10 @@ impl Config {
         // Validate email addresses when email alerts are enabled
         if self.alerts.email.enabled {
             if !is_valid_email(&self.alerts.email.from) {
-                anyhow::bail!(
-                    "Invalid 'from' email address: {}",
-                    self.alerts.email.from
-                );
+                anyhow::bail!("Invalid 'from' email address: {}", self.alerts.email.from);
             }
             if !is_valid_email(&self.alerts.email.to) {
-                anyhow::bail!(
-                    "Invalid 'to' email address: {}",
-                    self.alerts.email.to
-                );
+                anyhow::bail!("Invalid 'to' email address: {}", self.alerts.email.to);
             }
         }
 
@@ -1429,10 +1423,7 @@ headers:
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("blocklist_preset"));
+        assert!(result.unwrap_err().to_string().contains("blocklist_preset"));
     }
 
     #[test]
@@ -1600,8 +1591,8 @@ enabled: true
 
     #[test]
     fn test_config_load_invalid_yaml_syntax() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("invalid.yaml");
@@ -1617,8 +1608,8 @@ enabled: true
 
     #[test]
     fn test_config_load_wrong_type() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("wrong_type.yaml");
@@ -1633,8 +1624,8 @@ enabled: true
 
     #[test]
     fn test_config_load_empty_file() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("empty.yaml");
@@ -1650,8 +1641,8 @@ enabled: true
 
     #[test]
     fn test_config_load_partial_config() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("partial.yaml");
@@ -1669,13 +1660,17 @@ enabled: true
 
     #[test]
     fn test_config_load_invalid_preset_fails_validation() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("invalid_preset.yaml");
 
-        fs::write(&config_path, "preset: invalid_preset_name\nupdate_interval: 4h").unwrap();
+        fs::write(
+            &config_path,
+            "preset: invalid_preset_name\nupdate_interval: 4h",
+        )
+        .unwrap();
 
         let result = Config::load(&config_path);
         assert!(result.is_err());
@@ -1685,13 +1680,17 @@ enabled: true
 
     #[test]
     fn test_config_load_invalid_interval_fails_validation() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("invalid_interval.yaml");
 
-        fs::write(&config_path, "preset: recommended\nupdate_interval: invalid").unwrap();
+        fs::write(
+            &config_path,
+            "preset: recommended\nupdate_interval: invalid",
+        )
+        .unwrap();
 
         let result = Config::load(&config_path);
         assert!(result.is_err());
@@ -1701,8 +1700,8 @@ enabled: true
 
     #[test]
     fn test_config_load_http_blocklist_fails_validation() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("http_blocklist.yaml");
@@ -1734,7 +1733,10 @@ blocklists:
         let config = Config::default();
 
         let result = config.save(&nested_path);
-        assert!(result.is_ok(), "Save should succeed when creating nested directories");
+        assert!(
+            result.is_ok(),
+            "Save should succeed when creating nested directories"
+        );
         assert!(nested_path.exists(), "Config file should exist after save");
     }
 
@@ -1760,8 +1762,8 @@ blocklists:
 
     #[test]
     fn test_config_yaml_injection_in_headers() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("injection.yaml");
@@ -1785,8 +1787,8 @@ alerts:
 
     #[test]
     fn test_config_yaml_special_characters() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("special.yaml");
@@ -1859,8 +1861,8 @@ allowlist:
 
     #[test]
     fn test_config_unicode_in_values() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("unicode.yaml");
@@ -2014,20 +2016,30 @@ mod mock_fs_tests {
         let result = Config::load_with_fs("/etc/oustip/config.yaml", &mock);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to read config file"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to read config file"));
     }
 
     #[test]
     fn test_load_with_fs_permission_denied() {
         let mut mock = MockFileSystem::new();
 
-        mock.expect_read_to_string()
-            .returning(|_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "access denied")));
+        mock.expect_read_to_string().returning(|_| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "access denied",
+            ))
+        });
 
         let result = Config::load_with_fs("/etc/oustip/config.yaml", &mock);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to read config file"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to read config file"));
     }
 
     #[test]
@@ -2040,7 +2052,10 @@ mod mock_fs_tests {
         let result = Config::load_with_fs("/etc/oustip/config.yaml", &mock);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to parse config file"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to parse config file"));
     }
 
     #[test]
@@ -2124,7 +2139,10 @@ update_interval: invalid
         let result = Config::load_with_fs("/etc/oustip/config.yaml", &mock);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid update_interval"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid update_interval"));
     }
 
     #[test]
@@ -2186,7 +2204,10 @@ interfaces:
 
         assert!(config.is_interface_based());
         assert!(config.get_interface_config("eth0").is_some());
-        assert_eq!(config.get_interface_config("eth0").unwrap().mode, InterfaceMode::Wan);
+        assert_eq!(
+            config.get_interface_config("eth0").unwrap().mode,
+            InterfaceMode::Wan
+        );
     }
 
     // =========================================================================
@@ -2201,8 +2222,7 @@ interfaces:
             .withf(|p| p == Path::new("/etc/oustip"))
             .returning(|_| Ok(()))
             .times(1);
-        mock.expect_write()
-            .returning(|_, _| Ok(()));
+        mock.expect_write().returning(|_, _| Ok(()));
 
         let config = Config::default();
         let _ = config.save_with_fs("/etc/oustip/config.yaml", &mock);
@@ -2219,7 +2239,10 @@ interfaces:
         let result = config.save_with_fs("/etc/oustip/config.yaml", &mock);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to create config directory"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to create config directory"));
     }
 
     #[test]
@@ -2244,11 +2267,10 @@ interfaces:
         let mut mock = MockFileSystem::new();
 
         mock.expect_create_dir_all().returning(|_| Ok(()));
-        mock.expect_write()
-            .returning(move |_, contents| {
-                *written_content_clone.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
-                Ok(())
-            });
+        mock.expect_write().returning(move |_, contents| {
+            *written_content_clone.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
+            Ok(())
+        });
 
         let config = Config {
             language: "de".to_string(),
@@ -2277,15 +2299,14 @@ interfaces:
         // and fall back to using the mock's write method
         let mut save_mock = MockFileSystem::new();
         save_mock.expect_create_dir_all().returning(|_| Ok(()));
-        save_mock.expect_write()
-            .returning(move |_, contents| {
-                *storage_write.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
-                Ok(())
-            });
+        save_mock.expect_write().returning(move |_, contents| {
+            *storage_write.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
+            Ok(())
+        });
 
         let original = Config {
-            language: "fr".to_string(),  // non-default value
-            preset: "paranoid".to_string(),  // use a valid preset
+            language: "fr".to_string(),     // non-default value
+            preset: "paranoid".to_string(), // use a valid preset
             update_interval: "12h".to_string(),
             allowlist: vec!["10.0.0.0/8".to_string()],
             ..Default::default()
@@ -2293,18 +2314,27 @@ interfaces:
 
         // Use a path that doesn't exist - tempfile will fail, falling back to mock
         let result = original.save_with_fs("/nonexistent_mock_path/config.yaml", &save_mock);
-        assert!(result.is_ok(), "Save should succeed via mock: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Save should succeed via mock: {:?}",
+            result.err()
+        );
 
         // Verify content was written
         let content = storage.lock().unwrap().clone();
-        assert!(!content.is_empty(), "Content should have been written via mock");
+        assert!(
+            !content.is_empty(),
+            "Content should have been written via mock"
+        );
 
         // Load
         let mut load_mock = MockFileSystem::new();
-        load_mock.expect_read_to_string()
+        load_mock
+            .expect_read_to_string()
             .returning(move |_| Ok(storage_read.lock().unwrap().clone()));
 
-        let loaded = Config::load_with_fs("/nonexistent_mock_path/config.yaml", &load_mock).unwrap();
+        let loaded =
+            Config::load_with_fs("/nonexistent_mock_path/config.yaml", &load_mock).unwrap();
 
         // Verify the key fields were preserved
         assert_eq!(loaded.language, "fr");

@@ -348,10 +348,7 @@ mod extended_tests {
 
     #[test]
     fn test_check_result_special_chars() {
-        let result = CheckResult::pass(
-            "test!@#$%",
-            "Message with special chars: <>&\"'",
-        );
+        let result = CheckResult::pass("test!@#$%", "Message with special chars: <>&\"'");
         assert!(result.passed);
         assert!(result.name.contains("!@#$%"));
     }
@@ -446,7 +443,9 @@ mod extended_tests {
 
     #[test]
     fn test_check_config_nonexistent_path() {
-        let result = check_config(Path::new("/this/path/definitely/does/not/exist/config.yaml"));
+        let result = check_config(Path::new(
+            "/this/path/definitely/does/not/exist/config.yaml",
+        ));
         assert!(!result.passed);
         assert!(result.message.contains("not found"));
     }

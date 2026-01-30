@@ -310,10 +310,7 @@ fn test_check_valid_ip() {
     // - Panic with error (captured in stderr)
     // We just verify the command runs and produces some output
     let has_output = !stdout.is_empty() || !stderr.is_empty();
-    assert!(
-        has_output,
-        "Expected some output from check command"
-    );
+    assert!(has_output, "Expected some output from check command");
 
     // Verify it's not a segfault or silent failure
     // (status code doesn't matter - missing config is expected)
@@ -445,10 +442,7 @@ fn test_invalid_command() {
     let output = run_oustip(&["nonexistent-command"]);
 
     // Should fail with error
-    assert!(
-        !output.status.success(),
-        "Invalid command should fail"
-    );
+    assert!(!output.status.success(), "Invalid command should fail");
 }
 
 /// Test subcommand without action
@@ -530,7 +524,10 @@ fn test_multiple_flags() {
 
     // Should handle multiple flags (either show help or error)
     assert!(
-        stdout.contains("Usage") || stdout.contains("oustip") || !stderr.is_empty() || stdout.contains("0."),
+        stdout.contains("Usage")
+            || stdout.contains("oustip")
+            || !stderr.is_empty()
+            || stdout.contains("0."),
         "Expected some output for multiple flags"
     );
 }

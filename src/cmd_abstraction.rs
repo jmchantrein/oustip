@@ -79,7 +79,12 @@ impl CommandExecutor for RealCommandExecutor {
         })
     }
 
-    fn execute_with_stdin(&self, cmd: &str, args: &[String], stdin_data: &str) -> Result<CommandOutput> {
+    fn execute_with_stdin(
+        &self,
+        cmd: &str,
+        args: &[String],
+        stdin_data: &str,
+    ) -> Result<CommandOutput> {
         let mut child = Command::new(cmd)
             .args(args)
             .stdin(Stdio::piped())
@@ -187,12 +192,14 @@ mod tests {
         mock.expect_execute()
             .withf(|cmd, args| cmd == "test" && args == &["arg1".to_string()])
             .times(1)
-            .returning(|_, _| Ok(CommandOutput {
-                stdout: "mocked output".to_string(),
-                stderr: String::new(),
-                success: true,
-                code: Some(0),
-            }));
+            .returning(|_, _| {
+                Ok(CommandOutput {
+                    stdout: "mocked output".to_string(),
+                    stderr: String::new(),
+                    success: true,
+                    code: Some(0),
+                })
+            });
 
         let args = vec!["arg1".to_string()];
         let result = mock.execute("test", &args);
@@ -207,14 +214,18 @@ mod tests {
         let mut mock = MockCommandExecutor::new();
 
         mock.expect_execute_with_stdin()
-            .withf(|cmd, args, stdin| cmd == "nft" && args == &["-f".to_string(), "-".to_string()] && stdin == "script")
+            .withf(|cmd, args, stdin| {
+                cmd == "nft" && args == &["-f".to_string(), "-".to_string()] && stdin == "script"
+            })
             .times(1)
-            .returning(|_, _, _| Ok(CommandOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-                success: true,
-                code: Some(0),
-            }));
+            .returning(|_, _, _| {
+                Ok(CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                    code: Some(0),
+                })
+            });
 
         let args = vec!["-f".to_string(), "-".to_string()];
         let result = mock.execute_with_stdin("nft", &args, "script");

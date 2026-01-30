@@ -202,8 +202,14 @@ mod tests {
         let aggregated = aggregate(&nets);
         // Should aggregate to 1 IPv4 and 1 IPv6
         assert_eq!(aggregated.len(), 2);
-        let v4_count = aggregated.iter().filter(|n| matches!(n, IpNet::V4(_))).count();
-        let v6_count = aggregated.iter().filter(|n| matches!(n, IpNet::V6(_))).count();
+        let v4_count = aggregated
+            .iter()
+            .filter(|n| matches!(n, IpNet::V4(_)))
+            .count();
+        let v6_count = aggregated
+            .iter()
+            .filter(|n| matches!(n, IpNet::V6(_)))
+            .count();
         assert_eq!(v4_count, 1);
         assert_eq!(v6_count, 1);
     }

@@ -65,12 +65,14 @@ pub(crate) fn nft_path() -> &'static str {
 
 /// Get the absolute path for iptables command
 pub(crate) fn iptables_path() -> &'static str {
-    IPTABLES_PATH.get_or_init(|| find_command("iptables", IPTABLES_PATH_USR_SBIN, IPTABLES_PATH_SBIN))
+    IPTABLES_PATH
+        .get_or_init(|| find_command("iptables", IPTABLES_PATH_USR_SBIN, IPTABLES_PATH_SBIN))
 }
 
 /// Get the absolute path for ip6tables command
 pub(crate) fn ip6tables_path() -> &'static str {
-    IP6TABLES_PATH.get_or_init(|| find_command("ip6tables", IP6TABLES_PATH_USR_SBIN, IP6TABLES_PATH_SBIN))
+    IP6TABLES_PATH
+        .get_or_init(|| find_command("ip6tables", IP6TABLES_PATH_USR_SBIN, IP6TABLES_PATH_SBIN))
 }
 
 /// Get the absolute path for ipset command
@@ -194,7 +196,11 @@ pub fn detect_backend() -> Result<Backend> {
     }
 
     // Fall back to iptables
-    if Command::new(iptables_path()).arg("--version").output().is_ok() {
+    if Command::new(iptables_path())
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
         return Ok(Backend::Iptables);
     }
 
@@ -729,12 +735,21 @@ mod extended_tests {
 
         // Apply a /24 network
         let ips: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
-        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips, FilterMode::Conntrack)
+            .await
+            .unwrap();
 
         // Single IP within the /24 should be blocked
-        assert!(backend.is_blocked(&"192.168.1.100/32".parse().unwrap()).await.unwrap());
+        assert!(backend
+            .is_blocked(&"192.168.1.100/32".parse().unwrap())
+            .await
+            .unwrap());
         // IP outside the /24 should not be blocked
-        assert!(!backend.is_blocked(&"192.168.2.100/32".parse().unwrap()).await.unwrap());
+        assert!(!backend
+            .is_blocked(&"192.168.2.100/32".parse().unwrap())
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -742,12 +757,21 @@ mod extended_tests {
         let backend = mock::MockBackend::new();
 
         let ips: Vec<IpNet> = vec!["2001:db8::/32".parse().unwrap()];
-        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips, FilterMode::Conntrack)
+            .await
+            .unwrap();
 
         // Address within the /32 should be blocked
-        assert!(backend.is_blocked(&"2001:db8:1:2::1/128".parse().unwrap()).await.unwrap());
+        assert!(backend
+            .is_blocked(&"2001:db8:1:2::1/128".parse().unwrap())
+            .await
+            .unwrap());
         // Address outside should not be blocked
-        assert!(!backend.is_blocked(&"2001:db9::1/128".parse().unwrap()).await.unwrap());
+        assert!(!backend
+            .is_blocked(&"2001:db9::1/128".parse().unwrap())
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -758,14 +782,23 @@ mod extended_tests {
             "192.168.1.0/24".parse().unwrap(),
             "2001:db8::/32".parse().unwrap(),
         ];
-        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips, FilterMode::Conntrack)
+            .await
+            .unwrap();
 
         assert_eq!(backend.entry_count().await.unwrap(), 2);
 
         // IPv4 should be blocked
-        assert!(backend.is_blocked(&"192.168.1.1/32".parse().unwrap()).await.unwrap());
+        assert!(backend
+            .is_blocked(&"192.168.1.1/32".parse().unwrap())
+            .await
+            .unwrap());
         // IPv6 should be blocked
-        assert!(backend.is_blocked(&"2001:db8::1/128".parse().unwrap()).await.unwrap());
+        assert!(backend
+            .is_blocked(&"2001:db8::1/128".parse().unwrap())
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -774,17 +807,32 @@ mod extended_tests {
 
         // First apply
         let ips1: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
-        backend.apply_rules(&ips1, FilterMode::Conntrack).await.unwrap();
-        assert!(backend.is_blocked(&"192.168.1.1/32".parse().unwrap()).await.unwrap());
+        backend
+            .apply_rules(&ips1, FilterMode::Conntrack)
+            .await
+            .unwrap();
+        assert!(backend
+            .is_blocked(&"192.168.1.1/32".parse().unwrap())
+            .await
+            .unwrap());
 
         // Second apply with different IPs
         let ips2: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
-        backend.apply_rules(&ips2, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips2, FilterMode::Conntrack)
+            .await
+            .unwrap();
 
         // Old IP should no longer be blocked
-        assert!(!backend.is_blocked(&"192.168.1.1/32".parse().unwrap()).await.unwrap());
+        assert!(!backend
+            .is_blocked(&"192.168.1.1/32".parse().unwrap())
+            .await
+            .unwrap());
         // New IP should be blocked
-        assert!(backend.is_blocked(&"10.1.2.3/32".parse().unwrap()).await.unwrap());
+        assert!(backend
+            .is_blocked(&"10.1.2.3/32".parse().unwrap())
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -793,7 +841,10 @@ mod extended_tests {
 
         // Apply empty rules
         let ips: Vec<IpNet> = vec![];
-        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips, FilterMode::Conntrack)
+            .await
+            .unwrap();
 
         assert_eq!(backend.entry_count().await.unwrap(), 0);
         // Should still be marked as active even with 0 entries
@@ -835,7 +886,10 @@ mod extended_tests {
         let ips: Vec<IpNet> = vec!["192.168.0.0/16".parse().unwrap()];
 
         // Conntrack mode should work the same in mock
-        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips, FilterMode::Conntrack)
+            .await
+            .unwrap();
         assert!(backend.is_active().await.unwrap());
     }
 
@@ -858,12 +912,21 @@ mod extended_tests {
         let backend = mock::MockBackend::new();
 
         let ips: Vec<IpNet> = vec!["1.2.3.4/32".parse().unwrap()];
-        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips, FilterMode::Conntrack)
+            .await
+            .unwrap();
 
         // Exact match should be blocked
-        assert!(backend.is_blocked(&"1.2.3.4/32".parse().unwrap()).await.unwrap());
+        assert!(backend
+            .is_blocked(&"1.2.3.4/32".parse().unwrap())
+            .await
+            .unwrap());
         // Adjacent IP should not be blocked
-        assert!(!backend.is_blocked(&"1.2.3.5/32".parse().unwrap()).await.unwrap());
+        assert!(!backend
+            .is_blocked(&"1.2.3.5/32".parse().unwrap())
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -872,11 +935,23 @@ mod extended_tests {
 
         // /8 blocks millions of IPs
         let ips: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
-        backend.apply_rules(&ips, FilterMode::Conntrack).await.unwrap();
+        backend
+            .apply_rules(&ips, FilterMode::Conntrack)
+            .await
+            .unwrap();
 
         // Various addresses within /8 should be blocked
-        assert!(backend.is_blocked(&"10.0.0.1/32".parse().unwrap()).await.unwrap());
-        assert!(backend.is_blocked(&"10.255.255.255/32".parse().unwrap()).await.unwrap());
-        assert!(backend.is_blocked(&"10.128.64.32/32".parse().unwrap()).await.unwrap());
+        assert!(backend
+            .is_blocked(&"10.0.0.1/32".parse().unwrap())
+            .await
+            .unwrap());
+        assert!(backend
+            .is_blocked(&"10.255.255.255/32".parse().unwrap())
+            .await
+            .unwrap());
+        assert!(backend
+            .is_blocked(&"10.128.64.32/32".parse().unwrap())
+            .await
+            .unwrap());
     }
 }

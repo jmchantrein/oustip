@@ -1178,10 +1178,7 @@ mod extended_tests {
         let json = serde_json::to_string(&state).unwrap();
         let restored: OustipState = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(
-            restored.sources[0].name,
-            "source-with/special:chars!@#$%"
-        );
+        assert_eq!(restored.sources[0].name, "source-with/special:chars!@#$%");
     }
 
     // =========================================================================
@@ -1360,7 +1357,12 @@ mod mock_fs_tests {
             .returning(|_| true);
         mock.expect_read_to_string()
             .withf(|p| p == Path::new(STATE_FILE))
-            .returning(|_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "access denied")));
+            .returning(|_| {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "access denied",
+                ))
+            });
         mock.expect_exists()
             .withf(|p| p == Path::new(STATE_BACKUP_FILE))
             .returning(|_| true);
@@ -1475,7 +1477,10 @@ mod mock_fs_tests {
         assert_eq!(state.sources[0].name, "test_source");
         assert_eq!(state.total_entries, 100);
         assert_eq!(state.total_ips, 5000);
-        assert_eq!(state.assumed_ips, Some(vec!["8.8.8.8".to_string(), "1.1.1.1".to_string()]));
+        assert_eq!(
+            state.assumed_ips,
+            Some(vec!["8.8.8.8".to_string(), "1.1.1.1".to_string()])
+        );
         assert_eq!(state.last_known_total_ips, Some(4500));
         assert_eq!(state.last_preset, Some("paranoid".to_string()));
     }
@@ -1495,8 +1500,7 @@ mod mock_fs_tests {
         mock.expect_exists()
             .withf(|p| p == Path::new(STATE_FILE))
             .returning(|_| false);
-        mock.expect_write()
-            .returning(|_, _| Ok(()));
+        mock.expect_write().returning(|_, _| Ok(()));
         mock.expect_set_permissions_mode()
             .withf(|p, m| p == Path::new(STATE_FILE) && *m == 0o600)
             .returning(|_, _| Ok(()));
@@ -1598,11 +1602,10 @@ mod mock_fs_tests {
         mock.expect_exists()
             .withf(|p| p == Path::new(STATE_FILE))
             .returning(|_| false);
-        mock.expect_write()
-            .returning(move |_, contents| {
-                *written_content_clone.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
-                Ok(())
-            });
+        mock.expect_write().returning(move |_, contents| {
+            *written_content_clone.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
+            Ok(())
+        });
         mock.expect_set_permissions_mode().returning(|_, _| Ok(()));
 
         let mut state = OustipState::default();
@@ -1743,7 +1746,14 @@ mod mock_fs_tests {
 
         // Generate state with many sources
         let many_sources: Vec<String> = (0..100)
-            .map(|i| format!(r#"{{"name": "source_{}", "raw_count": {}, "ip_count": {}, "ips": []}}"#, i, i * 10, i * 100))
+            .map(|i| {
+                format!(
+                    r#"{{"name": "source_{}", "raw_count": {}, "ip_count": {}, "ips": []}}"#,
+                    i,
+                    i * 10,
+                    i * 100
+                )
+            })
             .collect();
 
         let sources_str = many_sources.join(",");
@@ -1853,15 +1863,17 @@ mod mock_fs_tests {
         // First, save a state
         let mut save_mock = MockFileSystem::new();
         save_mock.expect_create_dir_all().returning(|_| Ok(()));
-        save_mock.expect_exists()
+        save_mock
+            .expect_exists()
             .withf(|p| p == Path::new(STATE_FILE))
             .returning(|_| false);
-        save_mock.expect_write()
-            .returning(move |_, contents| {
-                *storage_clone.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
-                Ok(())
-            });
-        save_mock.expect_set_permissions_mode().returning(|_, _| Ok(()));
+        save_mock.expect_write().returning(move |_, contents| {
+            *storage_clone.lock().unwrap() = String::from_utf8_lossy(contents).to_string();
+            Ok(())
+        });
+        save_mock
+            .expect_set_permissions_mode()
+            .returning(|_, _| Ok(()));
 
         let mut original = OustipState::default();
         original.total_entries = 12345;
@@ -1873,10 +1885,12 @@ mod mock_fs_tests {
 
         // Now load it back
         let mut load_mock = MockFileSystem::new();
-        load_mock.expect_exists()
+        load_mock
+            .expect_exists()
             .withf(|p| p == Path::new(STATE_FILE))
             .returning(|_| true);
-        load_mock.expect_read_to_string()
+        load_mock
+            .expect_read_to_string()
             .withf(|p| p == Path::new(STATE_FILE))
             .returning(move |_| Ok(storage_read.lock().unwrap().clone()));
 

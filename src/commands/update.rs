@@ -804,7 +804,10 @@ mod tests {
         let threshold = 10.0;
 
         let change = calculate_change_percent(old_ips, new_ips);
-        assert!(change <= threshold, "5% change should not exceed 10% threshold");
+        assert!(
+            change <= threshold,
+            "5% change should not exceed 10% threshold"
+        );
     }
 
     #[test]
@@ -816,10 +819,7 @@ mod tests {
 
         let change = calculate_change_percent(old_ips, new_ips);
         // At 10%, should not trigger (need to exceed threshold, not equal)
-        assert!(
-            (change - 10.0).abs() < 0.01,
-            "Change should be exactly 10%"
-        );
+        assert!((change - 10.0).abs() < 0.01, "Change should be exactly 10%");
     }
 
     #[test]
@@ -828,7 +828,10 @@ mod tests {
         let previous_total_ips: Option<u128> = None;
 
         // When previous is None, we should skip alerting
-        assert!(previous_total_ips.is_none(), "First update has no previous data");
+        assert!(
+            previous_total_ips.is_none(),
+            "First update has no previous data"
+        );
     }
 
     #[test]
@@ -878,7 +881,10 @@ mod tests {
         let new_ips = 100_000u128; // 90% decrease
 
         let change = calculate_change_percent(old_ips, new_ips);
-        assert!((change - 90.0).abs() < 0.01, "90% decrease should be detected");
+        assert!(
+            (change - 90.0).abs() < 0.01,
+            "90% decrease should be detected"
+        );
     }
 
     #[test]
@@ -888,7 +894,10 @@ mod tests {
         let new_ips = 200u128; // 100% increase
 
         let change = calculate_change_percent(old_ips, new_ips);
-        assert!((change - 100.0).abs() < 0.01, "100% increase from small base");
+        assert!(
+            (change - 100.0).abs() < 0.01,
+            "100% increase from small base"
+        );
     }
 
     #[test]
@@ -898,7 +907,10 @@ mod tests {
         let new_ips = old_ips + old_ips / 10; // 10% increase
 
         let change = calculate_change_percent(old_ips, new_ips);
-        assert!((change - 10.0).abs() < 0.01, "10% increase with very large values");
+        assert!(
+            (change - 10.0).abs() < 0.01,
+            "10% increase with very large values"
+        );
     }
 
     #[test]
@@ -906,7 +918,10 @@ mod tests {
         let a: IpNet = "192.168.1.0/24".parse().unwrap();
         let b: IpNet = "192.168.1.0/24".parse().unwrap();
 
-        assert!(networks_overlap(&a, &b), "Identical networks should overlap");
+        assert!(
+            networks_overlap(&a, &b),
+            "Identical networks should overlap"
+        );
     }
 
     #[test]
@@ -914,8 +929,14 @@ mod tests {
         let larger: IpNet = "192.168.0.0/16".parse().unwrap();
         let smaller: IpNet = "192.168.1.0/24".parse().unwrap();
 
-        assert!(networks_overlap(&larger, &smaller), "Contained networks should overlap");
-        assert!(networks_overlap(&smaller, &larger), "Overlap should be symmetric");
+        assert!(
+            networks_overlap(&larger, &smaller),
+            "Contained networks should overlap"
+        );
+        assert!(
+            networks_overlap(&smaller, &larger),
+            "Overlap should be symmetric"
+        );
     }
 
     #[test]
@@ -923,7 +944,10 @@ mod tests {
         let a: IpNet = "192.168.0.0/24".parse().unwrap();
         let b: IpNet = "10.0.0.0/8".parse().unwrap();
 
-        assert!(!networks_overlap(&a, &b), "Different networks should not overlap");
+        assert!(
+            !networks_overlap(&a, &b),
+            "Different networks should not overlap"
+        );
     }
 
     #[test]
@@ -932,7 +956,10 @@ mod tests {
         let a: IpNet = "192.168.0.0/24".parse().unwrap();
         let b: IpNet = "192.168.1.0/24".parse().unwrap();
 
-        assert!(!networks_overlap(&a, &b), "Adjacent networks should not overlap");
+        assert!(
+            !networks_overlap(&a, &b),
+            "Adjacent networks should not overlap"
+        );
     }
 
     #[test]
@@ -940,7 +967,10 @@ mod tests {
         let single: IpNet = "192.168.1.100/32".parse().unwrap();
         let range: IpNet = "192.168.1.0/24".parse().unwrap();
 
-        assert!(networks_overlap(&single, &range), "Single IP in range should overlap");
+        assert!(
+            networks_overlap(&single, &range),
+            "Single IP in range should overlap"
+        );
     }
 
     #[test]
@@ -948,7 +978,10 @@ mod tests {
         let a: IpNet = "2001:db8::/32".parse().unwrap();
         let b: IpNet = "2001:db8:1234::/48".parse().unwrap();
 
-        assert!(networks_overlap(&a, &b), "IPv6 contained networks should overlap");
+        assert!(
+            networks_overlap(&a, &b),
+            "IPv6 contained networks should overlap"
+        );
     }
 
     #[test]
@@ -1231,9 +1264,9 @@ mod extended_tests {
         let blocklist: Vec<IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
 
         // Check if they overlap
-        let overlaps = allowlist.iter().any(|allow| {
-            blocklist.iter().any(|block| networks_overlap(allow, block))
-        });
+        let overlaps = allowlist
+            .iter()
+            .any(|allow| blocklist.iter().any(|block| networks_overlap(allow, block)));
         assert!(!overlaps);
     }
 
@@ -1242,9 +1275,9 @@ mod extended_tests {
         let allowlist: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
         let blocklist: Vec<IpNet> = vec!["192.168.1.0/24".parse().unwrap()];
 
-        let overlaps = allowlist.iter().any(|allow| {
-            blocklist.iter().any(|block| networks_overlap(allow, block))
-        });
+        let overlaps = allowlist
+            .iter()
+            .any(|allow| blocklist.iter().any(|block| networks_overlap(allow, block)));
         assert!(overlaps);
     }
 
@@ -1253,9 +1286,9 @@ mod extended_tests {
         let allowlist: Vec<IpNet> = vec!["192.168.1.100/32".parse().unwrap()];
         let blocklist: Vec<IpNet> = vec!["192.168.0.0/16".parse().unwrap()];
 
-        let overlaps = allowlist.iter().any(|allow| {
-            blocklist.iter().any(|block| networks_overlap(allow, block))
-        });
+        let overlaps = allowlist
+            .iter()
+            .any(|allow| blocklist.iter().any(|block| networks_overlap(allow, block)));
         assert!(overlaps);
     }
 
@@ -1287,7 +1320,9 @@ mod extended_tests {
         let current_preset = "paranoid";
 
         // Different presets = intentional change = skip alert
-        let should_skip = previous_preset.map(|p| p != current_preset).unwrap_or(false);
+        let should_skip = previous_preset
+            .map(|p| p != current_preset)
+            .unwrap_or(false);
         assert!(should_skip);
     }
 
@@ -1297,7 +1332,9 @@ mod extended_tests {
         let current_preset = "recommended";
 
         // Same preset = check for upstream changes
-        let should_skip = previous_preset.map(|p| p != current_preset).unwrap_or(false);
+        let should_skip = previous_preset
+            .map(|p| p != current_preset)
+            .unwrap_or(false);
         assert!(!should_skip);
     }
 
@@ -1328,8 +1365,8 @@ mod extended_tests {
     fn test_change_percent_realistic_blocklist_sizes() {
         // Typical blocklist sizes
         let sizes = [
-            (10_000, 10_500),    // Small list, 5% increase
-            (100_000, 95_000),   // Medium list, 5% decrease
+            (10_000, 10_500),       // Small list, 5% increase
+            (100_000, 95_000),      // Medium list, 5% decrease
             (1_000_000, 1_200_000), // Large list, 20% increase
         ];
 

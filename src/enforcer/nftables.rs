@@ -7,7 +7,10 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tracing::{debug, info, warn};
 
-use super::{exec_cmd, exec_cmd_with_executor, nft_path, validate_entry_count, FirewallBackend, FirewallStats};
+use super::{
+    exec_cmd, exec_cmd_with_executor, nft_path, validate_entry_count, FirewallBackend,
+    FirewallStats,
+};
 use crate::cmd_abstraction::{args_to_strings, CommandExecutor};
 use crate::config::FilterMode;
 
@@ -328,14 +331,21 @@ impl NftablesBackend {
     }
 
     /// Get stats using an injected CommandExecutor
-    pub fn get_stats_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<FirewallStats> {
+    pub fn get_stats_with_executor<E: CommandExecutor>(
+        &self,
+        executor: &E,
+    ) -> Result<FirewallStats> {
         let mut stats = FirewallStats::default();
-        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "table", "ip", TABLE_NAME]) {
+        if let Ok(output) =
+            exec_cmd_with_executor(executor, nft_path(), &["list", "table", "ip", TABLE_NAME])
+        {
             let v4_stats = self.parse_counters(&output);
             stats.packets_blocked += v4_stats.packets_blocked;
             stats.bytes_blocked += v4_stats.bytes_blocked;
         }
-        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "table", "ip6", TABLE_NAME]) {
+        if let Ok(output) =
+            exec_cmd_with_executor(executor, nft_path(), &["list", "table", "ip6", TABLE_NAME])
+        {
             let v6_stats = self.parse_counters(&output);
             stats.packets_blocked += v6_stats.packets_blocked;
             stats.bytes_blocked += v6_stats.bytes_blocked;
@@ -346,10 +356,18 @@ impl NftablesBackend {
     /// Get entry count using an injected CommandExecutor
     pub fn entry_count_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<usize> {
         let mut total_count = 0usize;
-        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "set", "ip", TABLE_NAME, SET_NAME]) {
+        if let Ok(output) = exec_cmd_with_executor(
+            executor,
+            nft_path(),
+            &["list", "set", "ip", TABLE_NAME, SET_NAME],
+        ) {
             total_count += count_set_elements(&output);
         }
-        if let Ok(output) = exec_cmd_with_executor(executor, nft_path(), &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6]) {
+        if let Ok(output) = exec_cmd_with_executor(
+            executor,
+            nft_path(),
+            &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6],
+        ) {
             total_count += count_set_elements(&output);
         }
         Ok(total_count)
@@ -358,9 +376,15 @@ impl NftablesBackend {
     /// Remove rules using an injected CommandExecutor
     pub fn remove_rules_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<()> {
         let args_v4 = args_to_strings(&["list", "table", "ip", TABLE_NAME]);
-        let v4_exists = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let v4_exists = executor
+            .execute(nft_path(), &args_v4)
+            .map(|o| o.success)
+            .unwrap_or(false);
         let args_v6 = args_to_strings(&["list", "table", "ip6", TABLE_NAME]);
-        let v6_exists = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        let v6_exists = executor
+            .execute(nft_path(), &args_v6)
+            .map(|o| o.success)
+            .unwrap_or(false);
         if v4_exists || v6_exists {
             let script = self.generate_remove_script();
             self.exec_nft_script_with_executor(executor, &script)?;
@@ -372,9 +396,15 @@ impl NftablesBackend {
     /// Check if rules are active using an injected CommandExecutor
     pub fn is_active_with_executor<E: CommandExecutor>(&self, executor: &E) -> Result<bool> {
         let args_v4 = args_to_strings(&["list", "table", "ip", TABLE_NAME]);
-        let v4_active = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let v4_active = executor
+            .execute(nft_path(), &args_v4)
+            .map(|o| o.success)
+            .unwrap_or(false);
         let args_v6 = args_to_strings(&["list", "table", "ip6", TABLE_NAME]);
-        let v6_active = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        let v6_active = executor
+            .execute(nft_path(), &args_v6)
+            .map(|o| o.success)
+            .unwrap_or(false);
         Ok(v4_active || v6_active)
     }
 }
@@ -442,14 +472,16 @@ impl FirewallBackend for NftablesBackend {
     async fn is_blocked(&self, ip: &IpNet) -> Result<bool> {
         match ip {
             IpNet::V4(_) => {
-                let output =
-                    exec_cmd(nft_path(), &["list", "set", "ip", TABLE_NAME, SET_NAME])?;
+                let output = exec_cmd(nft_path(), &["list", "set", "ip", TABLE_NAME, SET_NAME])?;
                 let ip_str = ip.to_string();
                 // More precise check - look for the IP as a complete entry
                 let ip_pattern = format!(" {} ", ip_str); // surrounded by spaces
                 let ip_pattern_comma = format!("{},", ip_str); // followed by comma
                 let ip_pattern_end = format!(" {}\n", ip_str); // at end of line
-                Ok(output.contains(&ip_pattern) || output.contains(&ip_pattern_comma) || output.contains(&ip_pattern_end) || output.ends_with(&ip_str))
+                Ok(output.contains(&ip_pattern)
+                    || output.contains(&ip_pattern_comma)
+                    || output.contains(&ip_pattern_end)
+                    || output.ends_with(&ip_str))
             }
             IpNet::V6(_) => {
                 let output =
@@ -459,7 +491,10 @@ impl FirewallBackend for NftablesBackend {
                 let ip_pattern = format!(" {} ", ip_str); // surrounded by spaces
                 let ip_pattern_comma = format!("{},", ip_str); // followed by comma
                 let ip_pattern_end = format!(" {}\n", ip_str); // at end of line
-                Ok(output.contains(&ip_pattern) || output.contains(&ip_pattern_comma) || output.contains(&ip_pattern_end) || output.ends_with(&ip_str))
+                Ok(output.contains(&ip_pattern)
+                    || output.contains(&ip_pattern_comma)
+                    || output.contains(&ip_pattern_end)
+                    || output.ends_with(&ip_str))
             }
         }
     }
@@ -489,8 +524,7 @@ impl FirewallBackend for NftablesBackend {
         }
 
         // Count IPv6 entries
-        if let Ok(output) = exec_cmd(nft_path(), &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6])
-        {
+        if let Ok(output) = exec_cmd(nft_path(), &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6]) {
             total_count += count_set_elements(&output);
         }
 
@@ -833,7 +867,8 @@ table ip oustip {
     #[test]
     fn test_restore_rules_parses_comments() {
         // Test that restore logic properly skips comment lines
-        let saved_rules = "# IPv4 rules\ntable ip oustip {\n}\n# IPv6 rules\ntable ip6 oustip {\n}\n";
+        let saved_rules =
+            "# IPv4 rules\ntable ip oustip {\n}\n# IPv6 rules\ntable ip6 oustip {\n}\n";
 
         let mut restore_script = String::new();
         for line in saved_rules.lines() {
@@ -881,9 +916,8 @@ mod extended_tests {
     #[test]
     fn test_is_safe_nft_element_special_chars_rejected() {
         let dangerous_chars = [
-            ' ', '\t', '\n', '\r', ';', '{', '}', '(', ')', '[', ']',
-            '|', '&', '$', '`', '\\', '"', '\'', '!', '#', '%', '^',
-            '*', '+', '=', '<', '>', '?', '~',
+            ' ', '\t', '\n', '\r', ';', '{', '}', '(', ')', '[', ']', '|', '&', '$', '`', '\\',
+            '"', '\'', '!', '#', '%', '^', '*', '+', '=', '<', '>', '?', '~',
         ];
 
         for c in dangerous_chars {
@@ -1204,7 +1238,9 @@ elements = { 3.3.3.0/24 }
     #[test]
     fn test_is_safe_nft_element_full_ipv6() {
         // Full IPv6 address
-        assert!(is_safe_nft_element("2001:0db8:0000:0000:0000:0000:0000:0001"));
+        assert!(is_safe_nft_element(
+            "2001:0db8:0000:0000:0000:0000:0000:0001"
+        ));
     }
 
     #[test]
@@ -1359,7 +1395,11 @@ mod mock_executor_tests {
             IpNet::V4(_) => ("ip", SET_NAME),
             IpNet::V6(_) => ("ip6", SET_NAME_V6),
         };
-        let output = exec_cmd_mock(executor, nft_path(), &["list", "set", table_family, TABLE_NAME, set_name])?;
+        let output = exec_cmd_mock(
+            executor,
+            nft_path(),
+            &["list", "set", table_family, TABLE_NAME, set_name],
+        )?;
         let ip_str = ip.to_string();
         Ok(output.contains(&format!(" {} ", ip_str))
             || output.contains(&format!("{},", ip_str))
@@ -1367,14 +1407,21 @@ mod mock_executor_tests {
             || output.ends_with(&ip_str))
     }
 
-    fn get_stats_mock<E: CmdExecutor>(backend: &NftablesBackend, executor: &E) -> Result<FirewallStats> {
+    fn get_stats_mock<E: CmdExecutor>(
+        backend: &NftablesBackend,
+        executor: &E,
+    ) -> Result<FirewallStats> {
         let mut stats = FirewallStats::default();
-        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "table", "ip", TABLE_NAME]) {
+        if let Ok(output) =
+            exec_cmd_mock(executor, nft_path(), &["list", "table", "ip", TABLE_NAME])
+        {
             let v4_stats = backend.parse_counters(&output);
             stats.packets_blocked += v4_stats.packets_blocked;
             stats.bytes_blocked += v4_stats.bytes_blocked;
         }
-        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "table", "ip6", TABLE_NAME]) {
+        if let Ok(output) =
+            exec_cmd_mock(executor, nft_path(), &["list", "table", "ip6", TABLE_NAME])
+        {
             let v6_stats = backend.parse_counters(&output);
             stats.packets_blocked += v6_stats.packets_blocked;
             stats.bytes_blocked += v6_stats.bytes_blocked;
@@ -1384,10 +1431,18 @@ mod mock_executor_tests {
 
     fn entry_count_mock<E: CmdExecutor>(executor: &E) -> Result<usize> {
         let mut total_count = 0usize;
-        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "set", "ip", TABLE_NAME, SET_NAME]) {
+        if let Ok(output) = exec_cmd_mock(
+            executor,
+            nft_path(),
+            &["list", "set", "ip", TABLE_NAME, SET_NAME],
+        ) {
             total_count += count_set_elements(&output);
         }
-        if let Ok(output) = exec_cmd_mock(executor, nft_path(), &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6]) {
+        if let Ok(output) = exec_cmd_mock(
+            executor,
+            nft_path(),
+            &["list", "set", "ip6", TABLE_NAME, SET_NAME_V6],
+        ) {
             total_count += count_set_elements(&output);
         }
         Ok(total_count)
@@ -1395,9 +1450,15 @@ mod mock_executor_tests {
 
     fn remove_rules_mock<E: CmdExecutor>(backend: &NftablesBackend, executor: &E) -> Result<()> {
         let args_v4 = args_to_vec(&["list", "table", "ip", TABLE_NAME]);
-        let v4_exists = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let v4_exists = executor
+            .execute(nft_path(), &args_v4)
+            .map(|o| o.success)
+            .unwrap_or(false);
         let args_v6 = args_to_vec(&["list", "table", "ip6", TABLE_NAME]);
-        let v6_exists = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        let v6_exists = executor
+            .execute(nft_path(), &args_v6)
+            .map(|o| o.success)
+            .unwrap_or(false);
         if v4_exists || v6_exists {
             let script = backend.generate_remove_script();
             exec_nft_script_mock(executor, &script)?;
@@ -1407,9 +1468,15 @@ mod mock_executor_tests {
 
     fn is_active_mock<E: CmdExecutor>(executor: &E) -> Result<bool> {
         let args_v4 = args_to_vec(&["list", "table", "ip", TABLE_NAME]);
-        let v4_active = executor.execute(nft_path(), &args_v4).map(|o| o.success).unwrap_or(false);
+        let v4_active = executor
+            .execute(nft_path(), &args_v4)
+            .map(|o| o.success)
+            .unwrap_or(false);
         let args_v6 = args_to_vec(&["list", "table", "ip6", TABLE_NAME]);
-        let v6_active = executor.execute(nft_path(), &args_v6).map(|o| o.success).unwrap_or(false);
+        let v6_active = executor
+            .execute(nft_path(), &args_v6)
+            .map(|o| o.success)
+            .unwrap_or(false);
         Ok(v4_active || v6_active)
     }
 
@@ -1467,11 +1534,11 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd.ends_with("nft") && args_has(args, "list") && args_has(args, "set"))
+            .withf(|cmd, args| {
+                cmd.ends_with("nft") && args_has(args, "list") && args_has(args, "set")
+            })
             .times(1)
-            .returning(|_, _| {
-                Ok(success_output("elements = { 192.168.1.0/24, 10.0.0.0/8 }"))
-            });
+            .returning(|_, _| Ok(success_output("elements = { 192.168.1.0/24, 10.0.0.0/8 }")));
 
         let ip: IpNet = "192.168.1.0/24".parse().unwrap();
         let result = is_blocked_mock(&backend, &mock, &ip);
@@ -1519,7 +1586,9 @@ mod mock_executor_tests {
             .withf(|_, args| args_has(args, "ip") && !args_has(args, "ip6"))
             .times(1)
             .returning(|_, _| {
-                Ok(success_output("counter packets 100 bytes 5000 drop\ncounter packets 50 bytes 2500 drop"))
+                Ok(success_output(
+                    "counter packets 100 bytes 5000 drop\ncounter packets 50 bytes 2500 drop",
+                ))
             });
 
         mock.expect_execute()
@@ -1555,9 +1624,17 @@ mod mock_executor_tests {
         let mut mock = MockCmdExecutor::new();
 
         mock.expect_execute()
-            .withf(|_, args| args_has(args, "ip") && args_has(args, "blocklist") && !args_has(args, "blocklist_v6"))
+            .withf(|_, args| {
+                args_has(args, "ip")
+                    && args_has(args, "blocklist")
+                    && !args_has(args, "blocklist_v6")
+            })
             .times(1)
-            .returning(|_, _| Ok(success_output("elements = { 192.168.1.0/24, 10.0.0.0/8, 172.16.0.0/12 }")));
+            .returning(|_, _| {
+                Ok(success_output(
+                    "elements = { 192.168.1.0/24, 10.0.0.0/8, 172.16.0.0/12 }",
+                ))
+            });
 
         mock.expect_execute()
             .withf(|_, args| args_has(args, "ip6"))
@@ -1609,7 +1686,9 @@ mod mock_executor_tests {
     fn test_is_active_both_tables() {
         let mut mock = MockCmdExecutor::new();
 
-        mock.expect_execute().times(2).returning(|_, _| Ok(success_output("")));
+        mock.expect_execute()
+            .times(2)
+            .returning(|_, _| Ok(success_output("")));
 
         let result = is_active_mock(&mock);
         assert!(result.is_ok());
