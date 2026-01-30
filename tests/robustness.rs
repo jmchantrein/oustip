@@ -180,17 +180,37 @@ async fn test_concurrent_operations() {
 #[test]
 fn test_yaml_malformed_input() {
     use serde::Deserialize;
-    use std::collections::HashMap;
 
     // Invalid YAML should fail gracefully - use String as target type
     let invalid_yaml = "{{{{not valid yaml";
     let result: Result<String, _> = serde_saphyr::from_str(invalid_yaml);
     assert!(result.is_err());
 
-    // Deeply nested YAML - use nested struct to test deep parsing
+    // Deeply nested YAML - use simple struct to test parsing
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level4 {
+        e: String,
+    }
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level3 {
+        d: Level4,
+    }
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level2 {
+        c: Level3,
+    }
+    #[allow(dead_code)]
+    #[derive(Deserialize)]
+    struct Level1 {
+        b: Level2,
+    }
+    #[allow(dead_code)]
     #[derive(Deserialize)]
     struct DeepNested {
-        a: HashMap<String, HashMap<String, HashMap<String, HashMap<String, String>>>>,
+        a: Level1,
     }
 
     let deep_yaml = "a:\n  b:\n    c:\n      d:\n        e: value";
