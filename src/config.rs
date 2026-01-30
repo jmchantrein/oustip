@@ -2251,7 +2251,7 @@ interfaces:
 
         mock.expect_create_dir_all().returning(|_| Ok(()));
         mock.expect_write()
-            .returning(|_, _| Err(io::Error::new(io::ErrorKind::Other, "disk full")));
+            .returning(|_, _| Err(io::Error::other("disk full")));
 
         let config = Config::default();
         let result = config.save_with_fs("/etc/oustip/config.yaml", &mock);

@@ -538,7 +538,7 @@ impl FirewallBackend for NftablesBackend {
         if let Ok(output) = exec_cmd(nft_path(), &["list", "table", "ip", TABLE_NAME]) {
             saved.push_str("# IPv4 rules\n");
             saved.push_str(&output);
-            saved.push_str("\n");
+            saved.push('\n');
         }
 
         // Save IPv6 table if it exists
@@ -1272,7 +1272,7 @@ elements = { 3.3.3.0/24 }
 
     #[test]
     fn test_nftables_backend_default() {
-        let backend = NftablesBackend::default();
+        let backend = NftablesBackend;
         // Just verify it can be created
         let _ = backend;
     }

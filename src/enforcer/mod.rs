@@ -607,11 +607,10 @@ mod extended_tests {
         assert_eq!(CMD_TIMEOUT_SECS, 30);
     }
 
-    #[test]
-    fn test_thresholds_ordered() {
-        // Large threshold should be bigger than warn threshold
+    // Const assertion for threshold ordering
+    const _: () = {
         assert!(LARGE_SET_ENTRIES > WARN_SET_ENTRIES);
-    }
+    };
 
     // =========================================================================
     // Path constants tests
@@ -722,7 +721,7 @@ mod extended_tests {
         let count = LARGE_SET_ENTRIES;
         let estimated_mb = (count * 32) / (1024 * 1024);
         // 2M entries * 32 bytes = 64MB
-        assert!(estimated_mb >= 60 && estimated_mb <= 70);
+        assert!((60..=70).contains(&estimated_mb));
     }
 
     // =========================================================================

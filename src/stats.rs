@@ -584,8 +584,8 @@ mod tests {
 
         // If it fails, check that the error is about missing fields
         // If it succeeds, verify the defaults
-        if result.is_err() {
-            let err = result.unwrap_err().to_string();
+        if let Err(err) = result {
+            let err = err.to_string();
             // This is expected if some fields don't have serde defaults
             assert!(
                 err.contains("missing field") || err.contains("expected"),
@@ -1608,9 +1608,11 @@ mod mock_fs_tests {
         });
         mock.expect_set_permissions_mode().returning(|_, _| Ok(()));
 
-        let mut state = OustipState::default();
-        state.total_entries = 999;
-        state.total_ips = 88888;
+        let mut state = OustipState {
+            total_entries: 999,
+            total_ips: 88888,
+            ..OustipState::default()
+        };
         state.add_assumed_ip("8.8.8.8");
         state.last_known_total_ips = Some(77777);
         state.last_preset = Some("full".to_string());
@@ -1650,7 +1652,7 @@ mod mock_fs_tests {
             .withf(|p| p == Path::new(STATE_FILE))
             .returning(|_| true);
         mock.expect_copy()
-            .returning(|_, _| Err(io::Error::new(io::ErrorKind::Other, "disk full")));
+            .returning(|_, _| Err(io::Error::other("disk full")));
 
         let result = OustipState::backup_state_with_fs(&mock);
         assert!(result.is_err());
@@ -1875,9 +1877,11 @@ mod mock_fs_tests {
             .expect_set_permissions_mode()
             .returning(|_, _| Ok(()));
 
-        let mut original = OustipState::default();
-        original.total_entries = 12345;
-        original.total_ips = 67890;
+        let mut original = OustipState {
+            total_entries: 12345,
+            total_ips: 67890,
+            ..OustipState::default()
+        };
         original.add_assumed_ip("10.0.0.1");
         original.last_preset = Some("minimal".to_string());
 

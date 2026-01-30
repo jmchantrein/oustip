@@ -507,19 +507,13 @@ mod extended_tests {
     // Constants and thresholds tests
     // =========================================================================
 
-    #[test]
-    fn test_min_free_disk_space_reasonable() {
-        // 100 MB is a reasonable minimum
+    // Const assertions for threshold validation
+    const _: () = {
         assert!(MIN_FREE_DISK_SPACE >= 50 * 1024 * 1024);
         assert!(MIN_FREE_DISK_SPACE <= 500 * 1024 * 1024);
-    }
-
-    #[test]
-    fn test_max_state_age_reasonable() {
-        // 24 hours is reasonable
         assert!(MAX_STATE_AGE_HOURS >= 12);
         assert!(MAX_STATE_AGE_HOURS <= 72);
-    }
+    };
 
     #[test]
     fn test_min_free_disk_space_bytes_to_mb() {
@@ -533,7 +527,7 @@ mod extended_tests {
 
     #[test]
     fn test_all_checks_pass() {
-        let checks = vec![
+        let checks = [
             CheckResult::pass("a", "OK"),
             CheckResult::pass("b", "OK"),
             CheckResult::pass("c", "OK"),
@@ -543,7 +537,7 @@ mod extended_tests {
 
     #[test]
     fn test_one_check_fails() {
-        let checks = vec![
+        let checks = [
             CheckResult::pass("a", "OK"),
             CheckResult::pass("b", "OK"),
             CheckResult::fail("c", "Failed"),
@@ -553,7 +547,7 @@ mod extended_tests {
 
     #[test]
     fn test_first_check_fails() {
-        let checks = vec![
+        let checks = [
             CheckResult::fail("a", "Failed"),
             CheckResult::pass("b", "OK"),
             CheckResult::pass("c", "OK"),
@@ -695,6 +689,6 @@ mod extended_tests {
         let age = now - at_threshold;
 
         // Exactly at threshold should NOT exceed
-        assert!(!(age > Duration::hours(MAX_STATE_AGE_HOURS)));
+        assert!(age <= Duration::hours(MAX_STATE_AGE_HOURS));
     }
 }

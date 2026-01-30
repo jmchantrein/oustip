@@ -1293,7 +1293,7 @@ mod extended_tests {
 
     #[test]
     fn test_iptables_backend_default() {
-        let backend = IptablesBackend::default();
+        let backend = IptablesBackend;
         let _ = backend;
     }
 
@@ -1537,6 +1537,7 @@ mod mock_executor_tests {
     #[automock]
     trait CmdExecutor: Send + Sync {
         fn execute(&self, cmd: &str, args: &[String]) -> Result<CmdOutput>;
+        #[allow(dead_code)]
         fn execute_with_stdin(&self, cmd: &str, args: &[String], stdin: &str) -> Result<CmdOutput>;
     }
 

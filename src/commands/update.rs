@@ -750,11 +750,11 @@ mod tests {
         // This tests the logic that preset changes should NOT trigger alerts
         // The actual function is async, so we test the conditions here
 
-        let previous_preset = Some("recommended");
+        let _previous_preset = Some("recommended");
         let current_preset = "paranoid";
 
         // If presets differ, we should NOT alert
-        assert_ne!(previous_preset.unwrap(), current_preset);
+        assert_ne!("recommended", current_preset);
     }
 
     #[test]
@@ -837,13 +837,12 @@ mod tests {
     #[test]
     fn test_preset_change_should_not_alert() {
         // User changing preset should NOT trigger alert (intentional change)
-        let previous_preset = Some("recommended");
+        let _previous_preset = Some("recommended");
         let current_preset = "paranoid";
 
         // Presets differ, so we should skip alerting
         assert_ne!(
-            previous_preset.unwrap(),
-            current_preset,
+            "recommended", current_preset,
             "Preset changed = intentional change"
         );
     }
@@ -851,12 +850,11 @@ mod tests {
     #[test]
     fn test_same_preset_should_check_change() {
         // Same preset = check for unintentional upstream changes
-        let previous_preset = Some("recommended");
+        let _previous_preset = Some("recommended");
         let current_preset = "recommended";
 
         assert_eq!(
-            previous_preset.unwrap(),
-            current_preset,
+            "recommended", current_preset,
             "Same preset = check for upstream changes"
         );
     }
@@ -1303,7 +1301,7 @@ mod extended_tests {
 
         // Exactly at threshold - should NOT trigger (need to exceed)
         let change = 10.0f64;
-        assert!(!(change > threshold));
+        assert!(change <= threshold);
 
         // Just above threshold
         let change = 10.01f64;
@@ -1311,7 +1309,7 @@ mod extended_tests {
 
         // Just below threshold
         let change = 9.99f64;
-        assert!(!(change > threshold));
+        assert!(change <= threshold);
     }
 
     #[test]

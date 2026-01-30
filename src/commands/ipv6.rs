@@ -277,7 +277,7 @@ mod tests {
         let config_path = temp_dir.path().join("99-oustip-ipv6.conf");
 
         let config = generate_ipv6_disable_config();
-        fs::write(&config_path, &config).unwrap();
+        fs::write(&config_path, config).unwrap();
 
         // Read back and verify
         let read_config = fs::read_to_string(&config_path).unwrap();

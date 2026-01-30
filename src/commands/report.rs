@@ -317,10 +317,8 @@ mod log_parser {
                 // Fallback: try reading /var/log/kern.log or /var/log/syslog
                 if let Ok(content) = std::fs::read_to_string("/var/log/kern.log") {
                     content
-                } else if let Ok(content) = std::fs::read_to_string("/var/log/syslog") {
-                    content
                 } else {
-                    String::new()
+                    std::fs::read_to_string("/var/log/syslog").unwrap_or_default()
                 }
             }
         }

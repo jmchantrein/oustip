@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_real_command_executor_default() {
-        let executor = RealCommandExecutor::default();
+        let executor = RealCommandExecutor;
         let _ = executor;
     }
 
@@ -190,7 +190,7 @@ mod tests {
         let mut mock = MockCommandExecutor::new();
 
         mock.expect_execute()
-            .withf(|cmd, args| cmd == "test" && args == &["arg1".to_string()])
+            .withf(|cmd, args| cmd == "test" && args == ["arg1".to_string()])
             .times(1)
             .returning(|_, _| {
                 Ok(CommandOutput {
@@ -215,7 +215,7 @@ mod tests {
 
         mock.expect_execute_with_stdin()
             .withf(|cmd, args, stdin| {
-                cmd == "nft" && args == &["-f".to_string(), "-".to_string()] && stdin == "script"
+                cmd == "nft" && args == ["-f".to_string(), "-".to_string()] && stdin == "script"
             })
             .times(1)
             .returning(|_, _, _| {
