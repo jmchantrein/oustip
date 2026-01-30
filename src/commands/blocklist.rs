@@ -140,7 +140,11 @@ async fn list_blocklists(config_path: &Path) -> Result<()> {
             .unwrap_or(0);
 
         if ip_count > 0 {
-            println!("  [x] {} ({} IPs)", b.name, format_count_with_separator(ip_count as usize));
+            println!(
+                "  [x] {} ({} IPs)",
+                b.name,
+                format_count_with_separator(ip_count as usize)
+            );
         } else {
             println!("  [x] {}", b.name);
         }
