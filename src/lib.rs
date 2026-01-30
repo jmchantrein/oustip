@@ -111,11 +111,13 @@
 pub mod aggregator;
 pub mod alerts;
 pub mod cli;
+pub mod cmd_abstraction;
 pub mod commands;
 pub mod config;
 pub mod dns;
 pub mod enforcer;
 pub mod fetcher;
+pub mod fs_abstraction;
 pub mod installer;
 pub mod interface_stats;
 pub mod interfaces;
@@ -125,6 +127,12 @@ pub mod signal;
 pub mod stats;
 pub mod utils;
 pub mod validation;
+
+// Re-export filesystem abstraction for convenience
+pub use fs_abstraction::{real_fs, FileSystem, RealFileSystem};
+
+#[cfg(test)]
+pub use fs_abstraction::MockFileSystem;
 
 pub use cli::{
     AllowlistAction, Cli, Commands, InterfacesAction, Ipv6Action, PresetsAction, UpdateTarget,

@@ -194,6 +194,9 @@ mod tests {
 
     #[test]
     fn test_reset_global_shutdown() {
+        // Reset first in case another test set it
+        reset_shutdown();
+        assert!(!is_shutdown_requested());
         request_shutdown();
         assert!(is_shutdown_requested());
         reset_shutdown();

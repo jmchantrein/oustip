@@ -1,0 +1,24 @@
+FROM alpine:3.19
+
+# Install required packages
+RUN apk add --no-cache \
+    nftables \
+    iptables \
+    ip6tables \
+    ipset \
+    bash \
+    curl \
+    jq
+
+# Create directories
+RUN mkdir -p /etc/oustip /var/lib/oustip /tests /fixtures
+
+# Copy test fixtures and scripts
+COPY tests/fixtures/ /fixtures/
+COPY tests/integration/scripts/ /tests/
+COPY templates/presets.yaml /etc/oustip/presets.yaml
+
+RUN chmod +x /tests/*.sh
+
+WORKDIR /tests
+ENTRYPOINT ["/bin/bash"]

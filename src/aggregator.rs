@@ -1,12 +1,13 @@
 //! CIDR aggregation for optimizing blocklists.
 
-use ipnet::{IpNet, Ipv4Net};
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use std::collections::HashSet;
 
 /// Aggregate a list of IPs/CIDRs into optimized CIDR ranges.
 ///
 /// This reduces the number of entries by merging contiguous ranges.
 /// For example: [192.168.0.0/25, 192.168.0.128/25] -> [192.168.0.0/24]
+/// Handles both IPv4 and IPv6 networks.
 pub fn aggregate(nets: &[IpNet]) -> Vec<IpNet> {
     // Separate IPv4 and IPv6
     let v4_nets: Vec<Ipv4Net> = nets
@@ -17,10 +18,21 @@ pub fn aggregate(nets: &[IpNet]) -> Vec<IpNet> {
         })
         .collect();
 
-    // Use ipnet's native aggregate function
-    let aggregated_v4 = Ipv4Net::aggregate(&v4_nets);
+    let v6_nets: Vec<Ipv6Net> = nets
+        .iter()
+        .filter_map(|n| match n {
+            IpNet::V6(v6) => Some(*v6),
+            _ => None,
+        })
+        .collect();
 
-    aggregated_v4.into_iter().map(IpNet::V4).collect()
+    // Use ipnet's native aggregate function for both
+    let aggregated_v4 = Ipv4Net::aggregate(&v4_nets);
+    let aggregated_v6 = Ipv6Net::aggregate(&v6_nets);
+
+    let mut result: Vec<IpNet> = aggregated_v4.into_iter().map(IpNet::V4).collect();
+    result.extend(aggregated_v6.into_iter().map(IpNet::V6));
+    result
 }
 
 /// Remove allowlisted IPs from a blocklist.
@@ -158,6 +170,72 @@ mod tests {
     }
 
     #[test]
+    fn test_aggregate_ipv6_contiguous() {
+        let nets: Vec<IpNet> = vec![
+            "2001:db8::/33".parse().unwrap(),
+            "2001:db8:8000::/33".parse().unwrap(),
+        ];
+        let aggregated = aggregate(&nets);
+        assert_eq!(aggregated.len(), 1);
+        assert_eq!(aggregated[0], "2001:db8::/32".parse::<IpNet>().unwrap());
+    }
+
+    #[test]
+    fn test_aggregate_ipv6_non_contiguous() {
+        // Use truly non-contiguous IPv6 addresses
+        let nets: Vec<IpNet> = vec![
+            "2001:db8::/32".parse().unwrap(),
+            "2001:0fff::/32".parse().unwrap(),
+        ];
+        let aggregated = aggregate(&nets);
+        assert_eq!(aggregated.len(), 2);
+    }
+
+    #[test]
+    fn test_aggregate_mixed_v4_v6() {
+        let nets: Vec<IpNet> = vec![
+            "192.168.0.0/25".parse().unwrap(),
+            "192.168.0.128/25".parse().unwrap(),
+            "2001:db8::/33".parse().unwrap(),
+            "2001:db8:8000::/33".parse().unwrap(),
+        ];
+        let aggregated = aggregate(&nets);
+        // Should aggregate to 1 IPv4 and 1 IPv6
+        assert_eq!(aggregated.len(), 2);
+        let v4_count = aggregated
+            .iter()
+            .filter(|n| matches!(n, IpNet::V4(_)))
+            .count();
+        let v6_count = aggregated
+            .iter()
+            .filter(|n| matches!(n, IpNet::V6(_)))
+            .count();
+        assert_eq!(v4_count, 1);
+        assert_eq!(v6_count, 1);
+    }
+
+    #[test]
+    fn test_count_ips_ipv6() {
+        let nets: Vec<IpNet> = vec![
+            "2001:db8::/64".parse().unwrap(), // 2^64 IPs
+        ];
+        let count = count_ips(&nets);
+        assert_eq!(count, 1u128 << 64);
+    }
+
+    #[test]
+    fn test_subtract_allowlist_ipv6() {
+        let blocklist: Vec<IpNet> = vec![
+            "2001:db8::/32".parse().unwrap(),
+            "2001:db9::/32".parse().unwrap(),
+        ];
+        let allowlist: Vec<IpNet> = vec!["2001:db8::/32".parse().unwrap()];
+        let result = subtract_allowlist(&blocklist, &allowlist);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].to_string().contains("2001:db9::"));
+    }
+
+    #[test]
     fn test_subtract_allowlist_empty() {
         let blocklist: Vec<IpNet> = vec!["192.168.0.0/24".parse().unwrap()];
         let allowlist: Vec<IpNet> = vec![];
@@ -191,6 +269,41 @@ mod proptests {
     /// Strategy to generate valid IPv4 CIDR vectors
     fn ipv4_cidr_vec_strategy(max_size: usize) -> impl Strategy<Value = Vec<IpNet>> {
         prop::collection::vec(ipv4_cidr_strategy(), 0..max_size)
+    }
+
+    /// Strategy to generate valid IPv6 CIDR strings
+    fn ipv6_cidr_strategy() -> impl Strategy<Value = IpNet> {
+        (
+            any::<u16>(),
+            any::<u16>(),
+            any::<u16>(),
+            any::<u16>(),
+            any::<u16>(),
+            any::<u16>(),
+            any::<u16>(),
+            any::<u16>(),
+            0u8..=128,
+        )
+            .prop_map(|(a, b, c, d, e, f, g, h, prefix)| {
+                let ip_str = format!(
+                    "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}/{}",
+                    a, b, c, d, e, f, g, h, prefix
+                );
+                ip_str.parse::<IpNet>().unwrap()
+            })
+    }
+
+    /// Strategy to generate valid IPv6 CIDR vectors
+    fn ipv6_cidr_vec_strategy(max_size: usize) -> impl Strategy<Value = Vec<IpNet>> {
+        prop::collection::vec(ipv6_cidr_strategy(), 0..max_size)
+    }
+
+    /// Strategy to generate mixed IPv4 and IPv6 CIDR vectors
+    fn mixed_cidr_vec_strategy(max_size: usize) -> impl Strategy<Value = Vec<IpNet>> {
+        prop::collection::vec(
+            prop_oneof![ipv4_cidr_strategy(), ipv6_cidr_strategy()],
+            0..max_size,
+        )
     }
 
     proptest! {
@@ -256,6 +369,43 @@ mod proptests {
             let count = count_ips(&nets);
             let coverage = coverage_percent(count);
             prop_assert!(coverage >= 0.0);
+        }
+
+        /// IPv6 aggregation should never increase the number of entries
+        #[test]
+        fn prop_aggregate_ipv6_reduces_or_maintains_size(nets in ipv6_cidr_vec_strategy(100)) {
+            let aggregated = aggregate(&nets);
+            prop_assert!(aggregated.len() <= nets.len());
+        }
+
+        /// IPv6 aggregation result should contain no duplicates
+        #[test]
+        fn prop_aggregate_ipv6_no_duplicates(nets in ipv6_cidr_vec_strategy(50)) {
+            let aggregated = aggregate(&nets);
+            let set: HashSet<_> = aggregated.iter().collect();
+            prop_assert_eq!(set.len(), aggregated.len());
+        }
+
+        /// Mixed IPv4/IPv6 aggregation should work correctly
+        #[test]
+        fn prop_aggregate_mixed_reduces_or_maintains_size(nets in mixed_cidr_vec_strategy(100)) {
+            let aggregated = aggregate(&nets);
+            prop_assert!(aggregated.len() <= nets.len());
+        }
+
+        /// Mixed aggregation should preserve address family counts
+        #[test]
+        fn prop_aggregate_mixed_preserves_families(nets in mixed_cidr_vec_strategy(50)) {
+            let v4_input = nets.iter().filter(|n| matches!(n, IpNet::V4(_))).count();
+            let v6_input = nets.iter().filter(|n| matches!(n, IpNet::V6(_))).count();
+
+            let aggregated = aggregate(&nets);
+            let v4_output = aggregated.iter().filter(|n| matches!(n, IpNet::V4(_))).count();
+            let v6_output = aggregated.iter().filter(|n| matches!(n, IpNet::V6(_))).count();
+
+            // Aggregated counts should be <= input counts for each family
+            prop_assert!(v4_output <= v4_input);
+            prop_assert!(v6_output <= v6_input);
         }
     }
 }

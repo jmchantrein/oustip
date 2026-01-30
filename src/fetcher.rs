@@ -26,6 +26,52 @@ const MAX_BLOCKLIST_SIZE: usize = 10 * 1024 * 1024;
 /// Maximum total size for all downloads combined (50 MB)
 const MAX_TOTAL_SIZE: usize = 50 * 1024 * 1024;
 
+/// Check if a URL points to a private or internal network (SSRF protection)
+///
+/// Returns true if the URL should be blocked, false if it's safe to fetch.
+fn is_private_or_internal_url(url: &str) -> bool {
+    if let Ok(parsed) = reqwest::Url::parse(url) {
+        // Use the typed Host enum for more reliable IP detection
+        if let Some(host) = parsed.host() {
+            match host {
+                url::Host::Ipv4(ipv4) => {
+                    return ipv4.is_loopback()
+                        || ipv4.is_private()
+                        || ipv4.is_link_local()
+                        || ipv4.is_broadcast()
+                        || ipv4.is_unspecified()
+                        // Link-local (169.254.x.x) - also checked by is_link_local()
+                        || (ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254);
+                }
+                url::Host::Ipv6(ipv6) => {
+                    return ipv6.is_loopback()
+                        || ipv6.is_unspecified()
+                        // Unique local addresses (fc00::/7)
+                        || (ipv6.segments()[0] & 0xfe00) == 0xfc00
+                        // Link-local (fe80::/10)
+                        || (ipv6.segments()[0] & 0xffc0) == 0xfe80;
+                }
+                url::Host::Domain(domain) => {
+                    // Check for localhost
+                    if domain == "localhost" {
+                        return true;
+                    }
+                    // Check for common internal hostnames
+                    let domain_lower = domain.to_lowercase();
+                    if domain_lower == "metadata"
+                        || domain_lower == "metadata.google.internal"
+                        || domain_lower.ends_with(".internal")
+                        || domain_lower.ends_with(".local")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Result of fetching a blocklist
 #[derive(Debug)]
 pub struct FetchResult {
@@ -184,6 +230,8 @@ impl Fetcher {
                 ..
             } => {
                 let mut all_ips = Vec::new();
+                let mut ipv4_failed = false;
+                let mut ipv6_failed = false;
 
                 // Fetch IPv4
                 match self
@@ -196,6 +244,7 @@ impl Fetcher {
                     }
                     Err(e) => {
                         warn!("Failed to fetch {} IPv4: {}", name, e);
+                        ipv4_failed = true;
                     }
                 }
 
@@ -211,8 +260,17 @@ impl Fetcher {
                         }
                         Err(e) => {
                             warn!("Failed to fetch {} IPv6: {}", name, e);
+                            ipv6_failed = true;
                         }
                     }
+                }
+
+                // Warn if allowlist is empty due to failures
+                if all_ips.is_empty() && (ipv4_failed || ipv6_failed) {
+                    warn!(
+                        "Allowlist {} returned no IPs (IPv4 failed: {}, IPv6 failed: {})",
+                        name, ipv4_failed, ipv6_failed
+                    );
                 }
 
                 Ok(all_ips)
@@ -307,7 +365,15 @@ impl Fetcher {
 
     /// Fetch content with retry logic and custom size limit
     async fn fetch_with_retry_and_limit(&self, url: &str, max_size: usize) -> Result<String> {
-        let mut last_error = None;
+        // SSRF protection: reject requests to private/internal networks
+        if is_private_or_internal_url(url) {
+            anyhow::bail!(
+                "URL points to private/internal network (SSRF protection): {}",
+                url
+            );
+        }
+
+        let mut errors: Vec<String> = Vec::new();
 
         for attempt in 0..MAX_RETRIES {
             if attempt > 0 {
@@ -369,15 +435,23 @@ impl Fetcher {
 
                         return Ok(body);
                     }
-                    last_error = Some(anyhow::anyhow!("HTTP {}", response.status()));
+                    errors.push(format!(
+                        "Attempt {}: HTTP {}",
+                        attempt + 1,
+                        response.status()
+                    ));
                 }
                 Err(e) => {
-                    last_error = Some(e.into());
+                    errors.push(format!("Attempt {}: {}", attempt + 1, e));
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error")))
+        anyhow::bail!(
+            "Failed after {} attempts: {}",
+            errors.len(),
+            errors.last().unwrap_or(&"unknown".to_string())
+        )
     }
 
     /// Fetch Cloudflare IPv4 ranges
@@ -582,6 +656,63 @@ mod tests {
         let ips = parse_blocklist(content);
         assert_eq!(ips.len(), 3);
     }
+
+    #[test]
+    fn test_ssrf_localhost() {
+        assert!(is_private_or_internal_url("http://localhost/api"));
+        assert!(is_private_or_internal_url("http://127.0.0.1/api"));
+        assert!(is_private_or_internal_url("http://[::1]/api"));
+    }
+
+    #[test]
+    fn test_ssrf_private_ipv4() {
+        // 10.x.x.x
+        assert!(is_private_or_internal_url("http://10.0.0.1/api"));
+        assert!(is_private_or_internal_url("http://10.255.255.255/api"));
+        // 172.16-31.x.x
+        assert!(is_private_or_internal_url("http://172.16.0.1/api"));
+        assert!(is_private_or_internal_url("http://172.31.255.255/api"));
+        // 192.168.x.x
+        assert!(is_private_or_internal_url("http://192.168.0.1/api"));
+        assert!(is_private_or_internal_url("http://192.168.255.255/api"));
+    }
+
+    #[test]
+    fn test_ssrf_link_local() {
+        assert!(is_private_or_internal_url(
+            "http://169.254.169.254/metadata"
+        ));
+        assert!(is_private_or_internal_url("http://169.254.0.1/api"));
+    }
+
+    #[test]
+    fn test_ssrf_internal_hostnames() {
+        assert!(is_private_or_internal_url(
+            "http://metadata.google.internal/"
+        ));
+        assert!(is_private_or_internal_url("http://something.internal/"));
+        assert!(is_private_or_internal_url("http://myhost.local/"));
+    }
+
+    #[test]
+    fn test_ssrf_public_allowed() {
+        // Public IPs should be allowed
+        assert!(!is_private_or_internal_url("http://8.8.8.8/"));
+        assert!(!is_private_or_internal_url("https://example.com/"));
+        assert!(!is_private_or_internal_url("https://github.com/api"));
+        assert!(!is_private_or_internal_url(
+            "https://www.cloudflare.com/ips-v4"
+        ));
+    }
+
+    #[test]
+    fn test_ssrf_ipv6_private() {
+        // Unique local addresses (fc00::/7)
+        assert!(is_private_or_internal_url("http://[fc00::1]/"));
+        assert!(is_private_or_internal_url("http://[fd00::1]/"));
+        // Link-local (fe80::/10)
+        assert!(is_private_or_internal_url("http://[fe80::1]/"));
+    }
 }
 
 #[cfg(test)]
@@ -656,5 +787,441 @@ mod proptests {
                 prop_assert!(s.parse::<IpNet>().is_ok());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod extended_tests {
+    use super::*;
+
+    // =========================================================================
+    // parse_blocklist() comprehensive tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_blocklist_ipv6() {
+        let content = "2001:db8::1\n2001:db8::/32\nfe80::1";
+        let ips = parse_blocklist(content);
+        assert_eq!(ips.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_blocklist_mixed_v4_v6() {
+        let content = "192.168.1.1\n2001:db8::1\n10.0.0.0/8\n::1";
+        let ips = parse_blocklist(content);
+        assert_eq!(ips.len(), 4);
+    }
+
+    #[test]
+    fn test_parse_blocklist_firehol_format() {
+        // Real FireHOL format with metadata comments
+        let content = r#"# FireHOL IP List
+# Last Update: 2024-01-01
+# Maintainer: firehol.org
+#
+# This file is licensed under CC-BY-SA
+#
+
+1.2.3.4
+5.6.7.0/24
+# another entry
+10.20.30.40
+"#;
+        let ips = parse_blocklist(content);
+        assert_eq!(ips.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_blocklist_tabs_and_spaces() {
+        let content = "\t192.168.1.1\t\n   10.0.0.0/8   \n\t\t172.16.0.0/12\t\t";
+        let ips = parse_blocklist(content);
+        assert_eq!(ips.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_blocklist_carriage_return() {
+        let content = "192.168.1.1\r\n10.0.0.0/8\r\n172.16.0.0/12\r\n";
+        let ips = parse_blocklist(content);
+        // Should handle CRLF line endings
+        assert!(ips.len() >= 2);
+    }
+
+    #[test]
+    fn test_parse_blocklist_mixed_invalid() {
+        let content = r#"192.168.1.1
+not-an-ip
+10.0.0.0/8
+also-invalid/24
+300.400.500.600
+172.16.0.0/12
+192.168.1.0/99
+"#;
+        let ips = parse_blocklist(content);
+        // Only valid IPs should be parsed
+        assert_eq!(ips.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_blocklist_hash_comments() {
+        let content = "# first comment\n192.168.1.1\n# second comment\n10.0.0.0/8\n#third";
+        let ips = parse_blocklist(content);
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_blocklist_preserves_prefix() {
+        let content = "192.168.0.0/24\n10.0.0.0/8\n172.16.0.0/12";
+        let ips = parse_blocklist(content);
+
+        // Verify prefix lengths are preserved
+        let prefix_lens: Vec<u8> = ips.iter().map(|ip| ip.prefix_len()).collect();
+        assert!(prefix_lens.contains(&24));
+        assert!(prefix_lens.contains(&8));
+        assert!(prefix_lens.contains(&12));
+    }
+
+    #[test]
+    fn test_parse_blocklist_single_ip_no_cidr() {
+        let content = "1.2.3.4\n5.6.7.8";
+        let ips = parse_blocklist(content);
+        assert_eq!(ips.len(), 2);
+        // Single IPs should become /32
+        for ip in &ips {
+            assert_eq!(ip.prefix_len(), 32);
+        }
+    }
+
+    #[test]
+    fn test_parse_blocklist_large_content() {
+        // Simulate a large blocklist
+        let mut content = String::new();
+        for i in 0..1000u32 {
+            let a = (i / 256) as u8;
+            let b = (i % 256) as u8;
+            content.push_str(&format!("10.{}.{}.0/24\n", a, b));
+        }
+        let ips = parse_blocklist(&content);
+        assert_eq!(ips.len(), 1000);
+    }
+
+    // =========================================================================
+    // parse_simple_list() tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_simple_list_basic() {
+        let content = "192.168.1.0/24\n10.0.0.0/8";
+        let ips = parse_simple_list(content);
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_simple_list_empty_lines() {
+        let content = "\n192.168.1.0/24\n\n\n10.0.0.0/8\n\n";
+        let ips = parse_simple_list(content);
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_simple_list_no_comments() {
+        // parse_simple_list doesn't filter comments
+        let content = "# comment\n192.168.1.0/24";
+        let ips = parse_simple_list(content);
+        // The comment line won't parse as an IP, so only 1
+        assert_eq!(ips.len(), 1);
+    }
+
+    // =========================================================================
+    // SSRF protection tests (is_private_or_internal_url)
+    // =========================================================================
+
+    #[test]
+    fn test_ssrf_ipv4_broadcast() {
+        assert!(is_private_or_internal_url("http://255.255.255.255/"));
+    }
+
+    #[test]
+    fn test_ssrf_ipv4_unspecified() {
+        assert!(is_private_or_internal_url("http://0.0.0.0/"));
+    }
+
+    #[test]
+    fn test_ssrf_cloud_metadata() {
+        // Common cloud metadata endpoints
+        assert!(is_private_or_internal_url(
+            "http://169.254.169.254/latest/meta-data/"
+        ));
+        assert!(is_private_or_internal_url("http://metadata/"));
+        assert!(is_private_or_internal_url(
+            "http://metadata.google.internal/computeMetadata/v1/"
+        ));
+    }
+
+    #[test]
+    fn test_ssrf_loopback_variations() {
+        assert!(is_private_or_internal_url("http://127.0.0.1/"));
+        assert!(is_private_or_internal_url("http://127.0.0.2/"));
+        assert!(is_private_or_internal_url("http://127.255.255.255/"));
+    }
+
+    #[test]
+    fn test_ssrf_ipv6_loopback() {
+        assert!(is_private_or_internal_url("http://[::1]/"));
+        assert!(is_private_or_internal_url("http://[0:0:0:0:0:0:0:1]/"));
+    }
+
+    #[test]
+    fn test_ssrf_ipv6_unspecified() {
+        assert!(is_private_or_internal_url("http://[::]/"));
+    }
+
+    #[test]
+    fn test_ssrf_ipv6_unique_local() {
+        // fc00::/7 - unique local addresses
+        assert!(is_private_or_internal_url("http://[fc00::1]/"));
+        assert!(is_private_or_internal_url("http://[fd00::1]/"));
+        assert!(is_private_or_internal_url(
+            "http://[fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]/"
+        ));
+    }
+
+    #[test]
+    fn test_ssrf_ipv6_link_local() {
+        // fe80::/10 - link-local addresses
+        assert!(is_private_or_internal_url("http://[fe80::1]/"));
+        // Note: Zone identifiers (e.g., %eth0) may not parse correctly in URLs
+        // Just test the basic link-local case
+        assert!(is_private_or_internal_url("http://[febf::1]/"));
+    }
+
+    #[test]
+    fn test_ssrf_local_domain_suffixes() {
+        assert!(is_private_or_internal_url("http://myserver.local/"));
+        assert!(is_private_or_internal_url("http://service.internal/"));
+        assert!(is_private_or_internal_url(
+            "http://deep.nested.domain.internal/"
+        ));
+        assert!(is_private_or_internal_url("http://printer.local/"));
+    }
+
+    #[test]
+    fn test_ssrf_public_ips_allowed() {
+        // Various public IPs should be allowed
+        assert!(!is_private_or_internal_url("https://8.8.8.8/"));
+        assert!(!is_private_or_internal_url("https://1.1.1.1/"));
+        assert!(!is_private_or_internal_url("https://208.67.222.222/"));
+        assert!(!is_private_or_internal_url("https://142.250.80.46/")); // Google
+    }
+
+    #[test]
+    fn test_ssrf_public_domains_allowed() {
+        assert!(!is_private_or_internal_url("https://google.com/"));
+        assert!(!is_private_or_internal_url("https://github.com/api"));
+        assert!(!is_private_or_internal_url("https://cdn.example.com/"));
+        assert!(!is_private_or_internal_url(
+            "https://subdomain.cloudflare.com/"
+        ));
+    }
+
+    #[test]
+    fn test_ssrf_invalid_url() {
+        // Invalid URLs should not block (return false = not internal)
+        assert!(!is_private_or_internal_url("not-a-url"));
+        assert!(!is_private_or_internal_url(""));
+    }
+
+    #[test]
+    fn test_ssrf_with_ports() {
+        assert!(is_private_or_internal_url("http://localhost:8080/"));
+        assert!(is_private_or_internal_url("http://127.0.0.1:3000/"));
+        assert!(is_private_or_internal_url("http://192.168.1.1:443/"));
+    }
+
+    #[test]
+    fn test_ssrf_with_auth() {
+        assert!(is_private_or_internal_url("http://user:pass@localhost/"));
+        assert!(is_private_or_internal_url(
+            "http://admin:secret@192.168.1.1/"
+        ));
+    }
+
+    #[test]
+    fn test_ssrf_with_path_and_query() {
+        assert!(is_private_or_internal_url(
+            "http://localhost/api/v1?key=value"
+        ));
+        assert!(is_private_or_internal_url(
+            "http://10.0.0.1/path/to/resource#anchor"
+        ));
+    }
+
+    // =========================================================================
+    // Fetcher struct tests
+    // =========================================================================
+
+    #[test]
+    fn test_fetcher_new() {
+        let fetcher = Fetcher::new();
+        assert!(fetcher.is_ok());
+    }
+
+    #[test]
+    fn test_fetcher_total_downloaded_initial() {
+        let fetcher = Fetcher::new().unwrap();
+        assert_eq!(fetcher.total_downloaded(), 0);
+    }
+
+    #[test]
+    fn test_fetcher_reset_counter() {
+        let fetcher = Fetcher::new().unwrap();
+        fetcher
+            .total_downloaded
+            .store(1000, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(fetcher.total_downloaded(), 1000);
+        fetcher.reset_counter();
+        assert_eq!(fetcher.total_downloaded(), 0);
+    }
+
+    // =========================================================================
+    // JSON path extraction tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_json_ip_list_simple_array() {
+        let fetcher = Fetcher::new().unwrap();
+        let json = r#"{"addresses": ["192.168.1.0/24", "10.0.0.0/8"]}"#;
+        let result = fetcher.parse_json_ip_list(json, "addresses");
+        assert!(result.is_ok());
+        let ips = result.unwrap();
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_json_ip_list_nested_path() {
+        let fetcher = Fetcher::new().unwrap();
+        let json = r#"{"data": {"prefixes": ["192.168.1.0/24"]}}"#;
+        let result = fetcher.parse_json_ip_list(json, "data.prefixes");
+        assert!(result.is_ok());
+        let ips = result.unwrap();
+        assert_eq!(ips.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_json_ip_list_with_objects() {
+        let fetcher = Fetcher::new().unwrap();
+        // AWS/Google style with nested objects
+        let json =
+            r#"{"prefixes": [{"ipv4Prefix": "192.168.1.0/24"}, {"ipv4Prefix": "10.0.0.0/8"}]}"#;
+        let result = fetcher.parse_json_ip_list(json, "prefixes");
+        assert!(result.is_ok());
+        let ips = result.unwrap();
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_json_ip_list_invalid_json() {
+        let fetcher = Fetcher::new().unwrap();
+        let result = fetcher.parse_json_ip_list("not json", "addresses");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_json_ip_list_missing_path() {
+        let fetcher = Fetcher::new().unwrap();
+        let json = r#"{"other": []}"#;
+        let result = fetcher.parse_json_ip_list(json, "addresses");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_json_ip_list_empty_array() {
+        let fetcher = Fetcher::new().unwrap();
+        let json = r#"{"addresses": []}"#;
+        let result = fetcher.parse_json_ip_list(json, "addresses");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_json_ip_list_mixed_valid_invalid() {
+        let fetcher = Fetcher::new().unwrap();
+        let json = r#"{"addresses": ["192.168.1.0/24", "invalid", "10.0.0.0/8", "also-invalid"]}"#;
+        let result = fetcher.parse_json_ip_list(json, "addresses");
+        assert!(result.is_ok());
+        let ips = result.unwrap();
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_json_ip_list_ipv6() {
+        let fetcher = Fetcher::new().unwrap();
+        let json = r#"{"addresses": ["2001:db8::/32", "fe80::/10"]}"#;
+        let result = fetcher.parse_json_ip_list(json, "addresses");
+        assert!(result.is_ok());
+        let ips = result.unwrap();
+        assert_eq!(ips.len(), 2);
+    }
+
+    #[test]
+    fn test_get_json_path_single_level() {
+        let fetcher = Fetcher::new().unwrap();
+        let json: serde_json::Value = serde_json::json!({"foo": [1, 2, 3]});
+        let result = fetcher.get_json_path(&json, &["foo"]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_array());
+    }
+
+    #[test]
+    fn test_get_json_path_deep_nesting() {
+        let fetcher = Fetcher::new().unwrap();
+        let json: serde_json::Value = serde_json::json!({
+            "level1": {
+                "level2": {
+                    "level3": ["value"]
+                }
+            }
+        });
+        let result = fetcher.get_json_path(&json, &["level1", "level2", "level3"]);
+        assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // Constants tests
+    // =========================================================================
+
+    #[test]
+    fn test_timeout_constant() {
+        assert_eq!(TIMEOUT_SECS, 30);
+    }
+
+    #[test]
+    fn test_max_retries_constant() {
+        assert_eq!(MAX_RETRIES, 3);
+    }
+
+    #[test]
+    fn test_max_blocklist_size_constant() {
+        assert_eq!(MAX_BLOCKLIST_SIZE, 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_max_total_size_constant() {
+        assert_eq!(MAX_TOTAL_SIZE, 50 * 1024 * 1024);
+    }
+
+    // =========================================================================
+    // FetchResult tests
+    // =========================================================================
+
+    #[test]
+    fn test_fetch_result_debug() {
+        let result = FetchResult {
+            name: "test".to_string(),
+            ips: vec!["192.168.1.0/24".parse().unwrap()],
+            raw_count: 1,
+        };
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("test"));
+        assert!(debug_str.contains("raw_count"));
     }
 }

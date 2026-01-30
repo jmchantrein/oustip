@@ -7,7 +7,7 @@ use lettre::{Message, SmtpTransport, Transport};
 use reqwest::Client;
 use serde::Serialize;
 use std::time::Duration;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 use crate::config::AlertsConfig;
 
@@ -222,8 +222,7 @@ impl AlertManager {
         let response = request.send().await.context("Failed to send webhook")?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            warn!("Webhook returned non-success status: {}", status);
+            anyhow::bail!("Webhook returned non-success status: {}", response.status());
         }
 
         debug!("Webhook alert sent successfully");
@@ -303,6 +302,67 @@ impl AlertTypes {
                  To acknowledge and stop these notifications:\n\
                    oustip assume add <ip>",
                 details
+            ),
+        )
+    }
+
+    /// Alert for significant blocklist content change
+    /// This indicates the upstream blocklist sources have changed substantially
+    pub fn blocklist_changed(
+        old_ips: u128,
+        new_ips: u128,
+        change_percent: f64,
+    ) -> (AlertLevel, String, String) {
+        let direction = if new_ips > old_ips {
+            "increased"
+        } else {
+            "decreased"
+        };
+        let diff = new_ips.abs_diff(old_ips);
+
+        (
+            AlertLevel::Warning,
+            "Blocklist Content Changed".to_string(),
+            format!(
+                "The blocklist content has {} significantly.\n\n\
+                 Previous: {} IPs\n\
+                 Current: {} IPs\n\
+                 Change: {} IPs ({:.1}%)\n\n\
+                 This may indicate:\n\
+                 - Upstream blocklist sources were updated\n\
+                 - A blocklist source is unavailable or corrupted\n\
+                 - Network issues during fetch\n\n\
+                 Review the changes with: oustip stats",
+                direction, old_ips, new_ips, diff, change_percent
+            ),
+        )
+    }
+
+    /// Alert for firewall rollback performed after rule application failure
+    /// This indicates that applying new firewall rules failed and the previous
+    /// ruleset has been (or attempted to be) restored
+    pub fn rollback_performed(error: &str, restored: bool) -> (AlertLevel, String, String) {
+        let status = if restored {
+            "Previous firewall rules have been successfully restored."
+        } else {
+            "WARNING: Failed to restore previous firewall rules. \
+             Manual intervention may be required."
+        };
+
+        (
+            AlertLevel::Error,
+            "Firewall Rollback Performed".to_string(),
+            format!(
+                "Failed to apply new firewall rules. A rollback was attempted.\n\n\
+                 Error: {}\n\n\
+                 Rollback Status: {}\n\n\
+                 This may indicate:\n\
+                 - Invalid IP addresses in blocklist\n\
+                 - Firewall backend issues\n\
+                 - Insufficient permissions\n\
+                 - System resource constraints\n\n\
+                 Please investigate and run: oustip update",
+                error, status
             ),
         )
     }
@@ -400,5 +460,67 @@ mod tests {
             assert!(!level.as_str().is_empty());
             assert!(level.gotify_priority() > 0);
         }
+    }
+
+    #[test]
+    fn test_alert_types_blocklist_changed_increase() {
+        let (level, title, body) = AlertTypes::blocklist_changed(100_000, 120_000, 20.0);
+        assert!(matches!(level, AlertLevel::Warning));
+        assert_eq!(title, "Blocklist Content Changed");
+        assert!(body.contains("increased"));
+        assert!(body.contains("100000"));
+        assert!(body.contains("120000"));
+        assert!(body.contains("20000"));
+        assert!(body.contains("20.0%"));
+    }
+
+    #[test]
+    fn test_alert_types_blocklist_changed_decrease() {
+        let (level, title, body) = AlertTypes::blocklist_changed(150_000, 100_000, 33.3);
+        assert!(matches!(level, AlertLevel::Warning));
+        assert_eq!(title, "Blocklist Content Changed");
+        assert!(body.contains("decreased"));
+        assert!(body.contains("150000"));
+        assert!(body.contains("100000"));
+        assert!(body.contains("50000"));
+        assert!(body.contains("33.3%"));
+    }
+
+    #[test]
+    fn test_alert_types_blocklist_changed_content() {
+        let (_, _, body) = AlertTypes::blocklist_changed(1000, 1200, 20.0);
+        // Should contain helpful information
+        assert!(body.contains("Upstream blocklist"));
+        assert!(body.contains("oustip stats"));
+    }
+
+    #[test]
+    fn test_alert_types_rollback_performed_success() {
+        let (level, title, body) = AlertTypes::rollback_performed("nft failed: syntax error", true);
+        assert!(matches!(level, AlertLevel::Error));
+        assert_eq!(title, "Firewall Rollback Performed");
+        assert!(body.contains("nft failed: syntax error"));
+        assert!(body.contains("successfully restored"));
+        assert!(body.contains("oustip update"));
+    }
+
+    #[test]
+    fn test_alert_types_rollback_performed_failure() {
+        let (level, title, body) =
+            AlertTypes::rollback_performed("iptables failed: permission denied", false);
+        assert!(matches!(level, AlertLevel::Error));
+        assert_eq!(title, "Firewall Rollback Performed");
+        assert!(body.contains("iptables failed: permission denied"));
+        assert!(body.contains("Failed to restore"));
+        assert!(body.contains("Manual intervention"));
+    }
+
+    #[test]
+    fn test_alert_types_rollback_performed_content() {
+        let (_, _, body) = AlertTypes::rollback_performed("test error", true);
+        // Should contain helpful diagnostic information
+        assert!(body.contains("Invalid IP addresses"));
+        assert!(body.contains("Firewall backend"));
+        assert!(body.contains("permissions"));
     }
 }

@@ -156,3 +156,171 @@ async fn reload_allowlist(config_path: &Path) -> Result<()> {
 }
 
 // Note: Tests for validate_ip_or_cidr are in src/validation.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Create a test config file
+    fn create_test_config(dir: &TempDir) -> std::path::PathBuf {
+        let config_path = dir.path().join("config.yaml");
+        let content = r#"
+language: en
+backend: auto
+mode: conntrack
+preset: recommended
+update_interval: 4h
+allowlist:
+  - 192.168.0.0/16
+  - 10.0.0.0/8
+blocklists:
+  - name: test_list
+    url: https://example.com/list
+    enabled: true
+auto_allowlist:
+  cloudflare: false
+  github: false
+  google_cloud: false
+  aws: false
+  fastly: false
+"#;
+        fs::write(&config_path, content).unwrap();
+        config_path
+    }
+
+    #[test]
+    fn test_list_allowlist_no_config() {
+        // list_allowlist should work without a config file (uses defaults)
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("nonexistent.yaml");
+
+        // The function is async, so we test the path handling
+        assert!(!config_path.exists());
+    }
+
+    #[test]
+    fn test_list_allowlist_with_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_test_config(&temp_dir);
+
+        let config = Config::load(&config_path).unwrap();
+        assert!(!config.allowlist.is_empty());
+        assert!(config.allowlist.contains(&"192.168.0.0/16".to_string()));
+    }
+
+    #[test]
+    fn test_allowlist_contains_check() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_test_config(&temp_dir);
+
+        let config = Config::load(&config_path).unwrap();
+
+        // Check existing entry
+        assert!(config.allowlist.contains(&"192.168.0.0/16".to_string()));
+
+        // Check non-existing entry
+        assert!(!config.allowlist.contains(&"8.8.8.8".to_string()));
+    }
+
+    #[test]
+    fn test_allowlist_default_providers() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_test_config(&temp_dir);
+
+        let config = Config::load(&config_path).unwrap();
+
+        // All providers should be disabled in test config
+        assert!(!config.auto_allowlist.cloudflare);
+        assert!(!config.auto_allowlist.github);
+        assert!(!config.auto_allowlist.google_cloud);
+        assert!(!config.auto_allowlist.aws);
+        assert!(!config.auto_allowlist.fastly);
+    }
+
+    #[test]
+    fn test_allowlist_modify_in_memory() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_test_config(&temp_dir);
+
+        let mut config = Config::load(&config_path).unwrap();
+        let original_len = config.allowlist.len();
+
+        // Add new entry
+        config.allowlist.push("1.2.3.4".to_string());
+        assert_eq!(config.allowlist.len(), original_len + 1);
+
+        // Remove entry
+        config.allowlist.retain(|x| x != "1.2.3.4");
+        assert_eq!(config.allowlist.len(), original_len);
+    }
+
+    #[test]
+    fn test_allowlist_validation() {
+        // Valid IPs/CIDRs
+        assert!(validate_ip_or_cidr("192.168.1.1").is_ok());
+        assert!(validate_ip_or_cidr("10.0.0.0/8").is_ok());
+        assert!(validate_ip_or_cidr("::1").is_ok());
+        assert!(validate_ip_or_cidr("2001:db8::/32").is_ok());
+
+        // Invalid IPs/CIDRs
+        assert!(validate_ip_or_cidr("not-an-ip").is_err());
+        assert!(validate_ip_or_cidr("192.168.1.0/99").is_err());
+        assert!(validate_ip_or_cidr("").is_err());
+    }
+
+    #[test]
+    fn test_allowlist_duplicate_detection() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_test_config(&temp_dir);
+
+        let config = Config::load(&config_path).unwrap();
+
+        // Test duplicate check logic
+        let test_ip = "192.168.0.0/16";
+        let is_duplicate = config.allowlist.contains(&test_ip.to_string());
+        assert!(is_duplicate);
+
+        // Test non-duplicate
+        let new_ip = "8.8.8.8";
+        let is_duplicate = config.allowlist.contains(&new_ip.to_string());
+        assert!(!is_duplicate);
+    }
+
+    #[test]
+    fn test_allowlist_retain_logic() {
+        let mut allowlist = vec![
+            "192.168.0.0/16".to_string(),
+            "10.0.0.0/8".to_string(),
+            "172.16.0.0/12".to_string(),
+        ];
+
+        // Remove middle entry
+        let original_len = allowlist.len();
+        allowlist.retain(|x| x != "10.0.0.0/8");
+        assert_eq!(allowlist.len(), original_len - 1);
+        assert!(!allowlist.contains(&"10.0.0.0/8".to_string()));
+
+        // Remove non-existent entry (no change)
+        let len_before = allowlist.len();
+        allowlist.retain(|x| x != "non-existent");
+        assert_eq!(allowlist.len(), len_before);
+    }
+
+    #[test]
+    fn test_config_save_atomicity() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_test_config(&temp_dir);
+
+        let mut config = Config::load(&config_path).unwrap();
+        config.allowlist.push("5.6.7.8".to_string());
+
+        // Save config
+        config.save(&config_path).unwrap();
+
+        // Reload and verify
+        let reloaded = Config::load(&config_path).unwrap();
+        assert!(reloaded.allowlist.contains(&"5.6.7.8".to_string()));
+    }
+}
