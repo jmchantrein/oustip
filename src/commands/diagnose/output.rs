@@ -168,12 +168,7 @@ impl DiagnosticResult {
     }
 
     /// Create a skipped test result
-    pub fn skip(
-        test_id: &str,
-        test_name: &str,
-        category: TestCategory,
-        reason: &str,
-    ) -> Self {
+    pub fn skip(test_id: &str, test_name: &str, category: TestCategory, reason: &str) -> Self {
         Self {
             test_id: test_id.to_string(),
             test_name: test_name.to_string(),
@@ -244,10 +239,22 @@ impl DiagnosticSummary {
     /// Create summary from results
     pub fn from_results(results: &[DiagnosticResult]) -> Self {
         let total = results.len();
-        let passed = results.iter().filter(|r| r.status == TestStatus::Passed).count();
-        let failed = results.iter().filter(|r| r.status == TestStatus::Failed).count();
-        let skipped = results.iter().filter(|r| r.status == TestStatus::Skipped).count();
-        let warnings = results.iter().filter(|r| r.status == TestStatus::Warning).count();
+        let passed = results
+            .iter()
+            .filter(|r| r.status == TestStatus::Passed)
+            .count();
+        let failed = results
+            .iter()
+            .filter(|r| r.status == TestStatus::Failed)
+            .count();
+        let skipped = results
+            .iter()
+            .filter(|r| r.status == TestStatus::Skipped)
+            .count();
+        let warnings = results
+            .iter()
+            .filter(|r| r.status == TestStatus::Warning)
+            .count();
         let critical_failures = results
             .iter()
             .filter(|r| r.status == TestStatus::Failed && r.severity == Severity::Critical)
@@ -352,7 +359,11 @@ impl SystemInfo {
                 content
                     .lines()
                     .find(|l| l.starts_with("PRETTY_NAME="))
-                    .map(|l| l.trim_start_matches("PRETTY_NAME=").trim_matches('"').to_string())
+                    .map(|l| {
+                        l.trim_start_matches("PRETTY_NAME=")
+                            .trim_matches('"')
+                            .to_string()
+                    })
             })
             .unwrap_or_else(|| "Linux".to_string());
 
@@ -438,8 +449,16 @@ mod tests {
             DiagnosticResult::pass("t1", "Test 1", TestCategory::Smoke, "ok", 10),
             DiagnosticResult::pass("t2", "Test 2", TestCategory::Smoke, "ok", 10),
             DiagnosticResult::fail(
-                "t3", "Test 3", TestCategory::Config, Severity::Critical,
-                "fail", "", "", "", "", 10
+                "t3",
+                "Test 3",
+                TestCategory::Config,
+                Severity::Critical,
+                "fail",
+                "",
+                "",
+                "",
+                "",
+                10,
             ),
             DiagnosticResult::skip("t4", "Test 4", TestCategory::Backend, "skip"),
         ];
@@ -454,12 +473,18 @@ mod tests {
 
     #[test]
     fn test_diagnostic_report_has_critical_failures() {
-        let results = vec![
-            DiagnosticResult::fail(
-                "t1", "Test 1", TestCategory::Config, Severity::Critical,
-                "fail", "", "", "", "", 10
-            ),
-        ];
+        let results = vec![DiagnosticResult::fail(
+            "t1",
+            "Test 1",
+            TestCategory::Config,
+            Severity::Critical,
+            "fail",
+            "",
+            "",
+            "",
+            "",
+            10,
+        )];
         let report = DiagnosticReport::new(results, 100);
         assert!(report.has_critical_failures());
     }
@@ -469,8 +494,16 @@ mod tests {
         let results = vec![
             DiagnosticResult::pass("t1", "Test 1", TestCategory::Smoke, "ok", 10),
             DiagnosticResult::fail(
-                "t2", "Test 2", TestCategory::Config, Severity::Warning,
-                "fail", "", "", "", "", 10
+                "t2",
+                "Test 2",
+                TestCategory::Config,
+                Severity::Warning,
+                "fail",
+                "",
+                "",
+                "",
+                "",
+                10,
             ),
         ];
         let report = DiagnosticReport::new(results, 100);
@@ -492,9 +525,13 @@ mod tests {
 
     #[test]
     fn test_diagnostic_report_serialization() {
-        let results = vec![
-            DiagnosticResult::pass("t1", "Test 1", TestCategory::Smoke, "ok", 10),
-        ];
+        let results = vec![DiagnosticResult::pass(
+            "t1",
+            "Test 1",
+            TestCategory::Smoke,
+            "ok",
+            10,
+        )];
         let report = DiagnosticReport::new(results, 100);
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("\"version\":\"1.0\""));

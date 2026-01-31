@@ -28,7 +28,12 @@ pub use output::{DiagnosticReport, DiagnosticResult, Severity, TestCategory, Tes
 pub use runner::DiagnosticRunner;
 
 /// Run the diagnose command
-pub async fn run(config_path: &Path, json: bool, category: Option<String>, verbose: bool) -> Result<()> {
+pub async fn run(
+    config_path: &Path,
+    json: bool,
+    category: Option<String>,
+    verbose: bool,
+) -> Result<()> {
     let runner = DiagnosticRunner::new(config_path, verbose);
     let report = runner.run_all(category.as_deref()).await;
 
@@ -57,10 +62,7 @@ fn print_human_readable(report: &DiagnosticReport) {
     println!("Summary:");
     println!(
         "  Total: {} | Passed: {} | Failed: {} | Skipped: {}",
-        report.summary.total,
-        report.summary.passed,
-        report.summary.failed,
-        report.summary.skipped
+        report.summary.total, report.summary.passed, report.summary.failed, report.summary.skipped
     );
     println!();
 
@@ -100,10 +102,7 @@ fn print_human_readable(report: &DiagnosticReport) {
                 };
                 println!(
                     "  {} {}{}: {}",
-                    icon,
-                    severity_icon,
-                    result.test_name,
-                    result.message
+                    icon, severity_icon, result.test_name, result.message
                 );
                 if result.status == TestStatus::Failed {
                     println!("      Expected: {}", result.expected);

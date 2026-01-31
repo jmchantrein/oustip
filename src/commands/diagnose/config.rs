@@ -490,30 +490,26 @@ fn test_mode_config(config: &Config) -> DiagnosticResult {
     };
 
     match config.mode {
-        FilterMode::Raw => {
-            DiagnosticResult::pass(
-                test_id,
-                test_name,
-                TestCategory::Config,
-                &format!(
-                    "Filter mode: {} (blocks before connection tracking, highest performance)",
-                    mode_str
-                ),
-                start.elapsed().as_millis() as u64,
-            )
-        }
-        FilterMode::Conntrack => {
-            DiagnosticResult::pass(
-                test_id,
-                test_name,
-                TestCategory::Config,
-                &format!(
-                    "Filter mode: {} (allows responses to LAN-initiated connections)",
-                    mode_str
-                ),
-                start.elapsed().as_millis() as u64,
-            )
-        }
+        FilterMode::Raw => DiagnosticResult::pass(
+            test_id,
+            test_name,
+            TestCategory::Config,
+            &format!(
+                "Filter mode: {} (blocks before connection tracking, highest performance)",
+                mode_str
+            ),
+            start.elapsed().as_millis() as u64,
+        ),
+        FilterMode::Conntrack => DiagnosticResult::pass(
+            test_id,
+            test_name,
+            TestCategory::Config,
+            &format!(
+                "Filter mode: {} (allows responses to LAN-initiated connections)",
+                mode_str
+            ),
+            start.elapsed().as_millis() as u64,
+        ),
     }
 }
 

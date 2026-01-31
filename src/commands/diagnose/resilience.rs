@@ -151,7 +151,10 @@ fn test_unicode_content_handling() -> DiagnosticResult {
                     test_id,
                     test_name,
                     TestCategory::Resilience,
-                    &format!("Unicode content parsed {} entries (expected 4)", parsed.len()),
+                    &format!(
+                        "Unicode content parsed {} entries (expected 4)",
+                        parsed.len()
+                    ),
                     "The parser may have issues with Unicode comment lines.",
                     "Review Unicode handling in the parser.",
                     start.elapsed().as_millis() as u64,
@@ -379,8 +382,8 @@ fn test_invalid_ip_formats() -> DiagnosticResult {
         let result = std::panic::catch_unwind(|| ip.parse::<ipnet::IpNet>());
         match result {
             Ok(Err(_)) => parse_failures += 1, // Expected: parse error
-            Ok(Ok(_)) => {} // Unexpected but not critical
-            Err(_) => panic_count += 1, // Critical: panic
+            Ok(Ok(_)) => {}                    // Unexpected but not critical
+            Err(_) => panic_count += 1,        // Critical: panic
         }
     }
 
@@ -419,9 +422,9 @@ fn test_memory_safety_large_cidr() -> DiagnosticResult {
 
     // Test that counting IPs in large CIDRs doesn't cause overflow
     let large_cidrs: Vec<ipnet::IpNet> = vec![
-        "0.0.0.0/0".parse().unwrap(),   // Entire IPv4 space
-        "0.0.0.0/1".parse().unwrap(),   // Half of IPv4
-        "::/0".parse().unwrap(),        // Entire IPv6 space (huge!)
+        "0.0.0.0/0".parse().unwrap(), // Entire IPv4 space
+        "0.0.0.0/1".parse().unwrap(), // Half of IPv4
+        "::/0".parse().unwrap(),      // Entire IPv6 space (huge!)
     ];
 
     let result = std::panic::catch_unwind(|| {

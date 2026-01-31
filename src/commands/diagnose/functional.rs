@@ -106,9 +106,9 @@ fn test_cidr_parsing() -> DiagnosticResult {
         ("0.0.0.0/0", true, 0),
         ("192.168.1.1/32", true, 32),
         ("2001:db8::/32", true, 32),
-        ("192.168.0.0/33", false, 0),  // Invalid prefix for IPv4
+        ("192.168.0.0/33", false, 0), // Invalid prefix for IPv4
         ("invalid/24", false, 0),
-        ("192.168.0.0", false, 0),  // No prefix
+        ("192.168.0.0", false, 0), // No prefix
     ];
 
     let mut failures = Vec::new();

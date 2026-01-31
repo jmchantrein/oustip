@@ -174,7 +174,8 @@ fn test_config_file_parseable(config_path: &Path) -> DiagnosticResult {
                 (
                     format!("Config validation failed: {}", error_str),
                     "Review the error message and fix the corresponding field in the config file. \
-                     Consider regenerating with 'oustip install' if issues persist.".to_string()
+                     Consider regenerating with 'oustip install' if issues persist."
+                        .to_string(),
                 )
             };
 

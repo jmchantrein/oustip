@@ -249,7 +249,10 @@ async fn test_blocklist_source(name: &str, url: &str) -> DiagnosticResult {
                     format!("Connection to {} timed out after 15 seconds. The server may be slow or unreachable.", url),
                     "Check network connectivity. Try accessing the URL in a browser. Consider using a different blocklist source.".to_string()
                 )
-            } else if error_str.contains("certificate") || error_str.contains("SSL") || error_str.contains("TLS") {
+            } else if error_str.contains("certificate")
+                || error_str.contains("SSL")
+                || error_str.contains("TLS")
+            {
                 (
                     format!("TLS/SSL error connecting to {}. The server's certificate may be invalid or expired.", url),
                     "Check if the URL is correct. The blocklist source may have certificate issues. Consider using an alternative source.".to_string()
