@@ -139,6 +139,16 @@ pub enum Commands {
         json: bool,
     },
 
+    /// Run comprehensive diagnostics (smoke, config, connectivity, backend, functional, resilience tests)
+    Diagnose {
+        /// Output in JSON format (LLM-friendly)
+        #[arg(long)]
+        json: bool,
+        /// Run only specific test category (smoke, config, connectivity, backend, functional, resilience)
+        #[arg(long)]
+        category: Option<String>,
+    },
+
     /// Uninstall OustIP completely
     Uninstall,
 
@@ -415,6 +425,30 @@ mod tests {
                 assert!(json);
             }
             _ => panic!("Expected Health command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_diagnose_command() {
+        let cli = Cli::try_parse_from(["oustip", "diagnose", "--json"]).unwrap();
+        match cli.command {
+            Commands::Diagnose { json, category } => {
+                assert!(json);
+                assert!(category.is_none());
+            }
+            _ => panic!("Expected Diagnose command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_diagnose_with_category() {
+        let cli = Cli::try_parse_from(["oustip", "diagnose", "--category", "smoke"]).unwrap();
+        match cli.command {
+            Commands::Diagnose { json, category } => {
+                assert!(!json);
+                assert_eq!(category, Some("smoke".to_string()));
+            }
+            _ => panic!("Expected Diagnose command"),
         }
     }
 

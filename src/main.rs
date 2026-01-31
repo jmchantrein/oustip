@@ -72,6 +72,9 @@ async fn main() -> Result<()> {
             oustip::commands::report::run(fmt, send, top, &cli.config).await
         }
         Commands::Health { json } => oustip::commands::health::run(&cli.config, json).await,
+        Commands::Diagnose { json, category } => {
+            oustip::commands::diagnose::run(&cli.config, json, category, cli.verbose).await
+        }
         Commands::Uninstall => oustip::commands::uninstall::run(&cli.config).await,
         Commands::Version => {
             println!("oustip {}", env!("CARGO_PKG_VERSION"));

@@ -4,6 +4,7 @@ pub mod allowlist;
 pub mod assume;
 pub mod blocklist;
 pub mod check;
+pub mod diagnose;
 pub mod disable;
 pub mod enable;
 pub mod health;
