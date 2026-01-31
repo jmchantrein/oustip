@@ -233,8 +233,12 @@ impl NftablesBackend {
         script
     }
 
-    /// Execute nft with stdin script
+    /// Execute nft with stdin script (with timeout protection)
     fn exec_nft_script(&self, script: &str) -> Result<()> {
+        use std::time::{Duration, Instant};
+
+        const NFT_SCRIPT_TIMEOUT_SECS: u64 = 30;
+
         debug!("Executing nft script:\n{}", script);
 
         let mut child = Command::new(nft_path())
@@ -250,14 +254,37 @@ impl NftablesBackend {
             stdin.write_all(script.as_bytes())?;
         }
 
-        let output = child.wait_with_output()?;
+        let start = Instant::now();
+        let timeout = Duration::from_secs(NFT_SCRIPT_TIMEOUT_SECS);
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("nft failed: {}", stderr);
+        // Wait with timeout
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let output = child.wait_with_output()?;
+                    if status.success() {
+                        return Ok(());
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        anyhow::bail!("nft failed: {}", stderr);
+                    }
+                }
+                Ok(None) => {
+                    if start.elapsed() > timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        anyhow::bail!(
+                            "nft script execution timed out after {} seconds",
+                            NFT_SCRIPT_TIMEOUT_SECS
+                        );
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => {
+                    anyhow::bail!("Error waiting for nft: {}", e);
+                }
+            }
         }
-
-        Ok(())
     }
 
     /// Parse counter values from nft output
