@@ -1,0 +1,58 @@
+# Sources et references pour les agents IA
+# Ce fichier centralise les URLs et ressources utilisees par les agents
+
+version: "1.0.0"
+
+# Documentation officielle du projet
+project:
+  repository: "https://github.com/jmchantrein/oustip"
+  docs_api: "https://jmchantrein.github.io/oustip/"
+  license: "AGPL-3.0-or-later"
+
+# Standards IA suivis
+standards:
+  agents_md:
+    url: "https://agents.md/"
+    description: "Standard universel pour la configuration d'agents IA"
+  mcp:
+    url: "https://modelcontextprotocol.io/"
+    description: "Model Context Protocol - protocole de connexion IA"
+
+# Documentation Rust
+rust:
+  book: "https://doc.rust-lang.org/book/"
+  async_book: "https://rust-lang.github.io/async-book/"
+  clippy: "https://rust-lang.github.io/rust-clippy/"
+  rustfmt: "https://rust-lang.github.io/rustfmt/"
+
+# Dependencies principales
+dependencies:
+  tokio: "https://tokio.rs/"
+  clap: "https://docs.rs/clap/"
+  serde: "https://serde.rs/"
+  tracing: "https://tracing.rs/"
+  ipnet: "https://docs.rs/ipnet/"
+
+# Securite
+security:
+  owasp: "https://owasp.org/www-project-top-ten/"
+  rustsec: "https://rustsec.org/"
+  cve: "https://cve.mitre.org/"
+
+# Ecriture inclusive
+inclusivity:
+  guide_fr: "https://www.haut-conseil-egalite.gouv.fr/stereotypes-et-roles-sociaux/zoom-sur/article/pour-une-communication-sans-stereotype-de-sexe-le-guide-pratique-du-haut"
+  point_median: "Utiliser le point median (·) pour l'inclusivite"
+  exemples:
+    - "utilisateur·ice"
+    - "developpeur·euse"
+    - "contributeur·ice"
+
+# Methodologies
+methodologies:
+  bmad:
+    url: "https://github.com/bmad-code-org/BMAD-METHOD"
+    description: "BMAD Method - personas, orchestration, documentation riche"
+  kiro:
+    url: "https://kiro.dev/"
+    description: "Spec-driven development"

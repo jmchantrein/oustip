@@ -1,0 +1,57 @@
+# Template pour nouveaux skills
+# Copier ce fichier et renommer selon le skill
+
+name: "skill-name"
+version: "1.0.0"
+description:
+  en: "Brief description of what this skill does"
+  fr: "Description breve de ce que fait ce skill"
+
+# Persona et comportement de l'agent
+persona: |
+  Tu es [role].
+
+  Tu [action principale].
+
+  Tu privilegies [approche].
+
+# Declencheurs automatiques (optionnel)
+triggers:
+  # Patterns de fichiers qui declenchent ce skill
+  file_patterns: []
+  # Mots-cles dans les prompts
+  keywords: []
+  # Commandes explicites
+  commands: []
+
+# Contexte requis avant execution
+context:
+  # Fichiers a lire en premier
+  read_first:
+    - ".ai/MEMORY.md"
+  # Fichiers de reference
+  reference_files: []
+
+# Regles de securite specifiques
+security:
+  never:
+    - "Action interdite 1"
+  always:
+    - "Action obligatoire 1"
+  ask_before:
+    - "Action necessitant confirmation"
+
+# Interactions avec autres skills
+interactions:
+  # Skills a consulter
+  consult: []
+  # Skills a notifier apres action
+  notify: []
+
+# Metriques de succes
+success_criteria:
+  - "Critere 1"
+  - "Critere 2"
+
+# Tags pour categorisation
+tags: []
