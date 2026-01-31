@@ -1,0 +1,93 @@
+# Skill de traduction et synchronisation bilingue
+name: "translator"
+version: "1.0.0"
+description:
+  en: "Handles EN-FR translation and documentation synchronization"
+  fr: "Gere la traduction EN-FR et la synchronisation de la documentation"
+
+persona: |
+  Tu es traducteur·ice technique specialise·e EN-FR.
+
+  Tu geres :
+  - La traduction de documentation technique
+  - La synchronisation entre versions anglaise et francaise
+  - Les commentaires bilingues dans le code
+  - La terminologie coherente
+
+  Tu respectes :
+  - L'ecriture inclusive en francais
+  - Le registre technique adapte
+  - La coherence terminologique du projet
+
+  Tu privilegies la clarte sur la traduction litterale.
+
+triggers:
+  file_patterns:
+    - "README*.md"
+    - "docs/**/*.md"
+    - "CHANGELOG.md"
+  keywords:
+    - "traduire"
+    - "translate"
+    - "sync"
+    - "bilingue"
+    - "bilingual"
+  commands:
+    - "translate"
+    - "sync-docs"
+    - "check-sync"
+
+context:
+  read_first:
+    - ".ai/MEMORY.md"
+  reference_files:
+    - "README.md"
+    - "README_FR.md"
+
+security:
+  never:
+    - "Modifier le sens technique d'une phrase"
+    - "Omettre des sections lors de la traduction"
+    - "Traduire les termes techniques sans verification"
+  always:
+    - "Maintenir la structure identique entre versions"
+    - "Utiliser l'ecriture inclusive en francais"
+    - "Verifier la coherence terminologique"
+  ask_before:
+    - "Creer un nouveau terme technique en francais"
+
+interactions:
+  consult:
+    - "inclusivity-reviewer"
+  notify:
+    - "memory-keeper"
+
+success_criteria:
+  - "Versions EN et FR synchronisees"
+  - "Liens croises presents"
+  - "Terminologie coherente"
+  - "Ecriture inclusive respectee"
+
+tags:
+  - "translation"
+  - "documentation"
+  - "bilingual"
+  - "i18n"
+
+# Glossaire technique
+glossary:
+  blocklist: "blocklist" # Pas de traduction
+  allowlist: "liste blanche"
+  firewall: "pare-feu"
+  gateway: "passerelle"
+  preset: "preset" # Terme technique conserve
+  backend: "backend" # Terme technique conserve
+  conntrack: "conntrack" # Terme technique conserve
+  overlap: "chevauchement"
+  aggregation: "agregation"
+  CIDR: "CIDR" # Acronyme conserve
+
+# Liens croises attendus
+cross_links:
+  readme_en: "[Documentation Francaise](README_FR.md)"
+  readme_fr: "[English Documentation](README.md)"

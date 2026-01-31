@@ -497,6 +497,44 @@ Cela signifie que vous devez partager le code source si vous :
 
 **Stack Recommandee**: OustIP (blocage preventif) + CrowdSec (reactif/comportemental)
 
+## Architecture IA
+
+OustIP utilise une architecture IA hybride pour l'assistance au developpement. La configuration est centralisee dans `.ai/` et genere des fichiers specifiques a chaque plateforme.
+
+### Structure
+
+```
+.ai/
+├── skills/           # Definitions d'agents (source YAML)
+├── commands/         # Reference rapide
+├── MEMORY.md         # Contexte persistant entre sessions
+└── generate.sh       # Generateur multi-plateforme
+```
+
+### Plateformes supportees
+
+| Plateforme | Fichiers generes |
+|------------|------------------|
+| Claude Code | `.claude/agents/*.md` |
+| OpenCode | `.opencode/agent/*.md` |
+| Ollama | `ollama/Modelfile.*` |
+| Continue.dev | `.continuerc.json` |
+| Aider | `.aider.conf.yml` |
+| Cursor | `.cursorrules` |
+| Codex | `.codex/agents/*.md` |
+
+### Utilisation
+
+```bash
+# Regenerer toutes les configs (si VERSION a change)
+.ai/generate.sh
+
+# Forcer la regeneration
+.ai/generate.sh --force
+```
+
+Voir [AGENTS.md](AGENTS.md) pour les regles de developpement et [.ai/MEMORY.md](.ai/MEMORY.md) pour le contexte du projet.
+
 ## Contribuer
 
 Les contributions sont les bienvenues ! Merci de :
