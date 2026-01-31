@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/jmchantrein/oustip/compare/v0.1.0...v0.2.0) (2026-01-31)
+
+
+### Features
+
+* **diagnose:** add comprehensive runtime testing command ([a2b70c9](https://github.com/jmchantrein/oustip/commit/a2b70c91e9bc54b4a5a3d65a274616fabb2c9724))
+
 # [0.1.0](https://github.com/jmchantrein/oustip/compare/v0.0.1...v0.1.0) (2026-01-30)
 
 
