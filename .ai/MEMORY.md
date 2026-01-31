@@ -7,7 +7,7 @@
 | Attribut | Valeur |
 |----------|--------|
 | Nom | OustIP |
-| Version | 0.2.0 |
+| Version | 0.3.0 |
 | Langage | Rust (edition 2021) |
 | Rust minimum | 1.75 |
 | Licence | AGPL-3.0-or-later |
@@ -61,10 +61,11 @@
 - Documentation a synchroniser avec le code
 
 ### A faire
-- [ ] Mettre a jour docs/ARCHITECTURE.md (ajouter `diagnose`)
-- [ ] Mettre a jour README.md et README_FR.md (ajouter `diagnose`)
-- [ ] Valider que tous les tests passent
+- [x] Mettre a jour docs/ARCHITECTURE.md (ajouter `diagnose`) ✅ 2026-01-31
+- [x] Mettre a jour README.md et README_FR.md (ajouter `diagnose`) ✅ 2026-01-31
+- [x] Valider que tous les tests passent ✅ 2026-01-31
 - [ ] Preparer pour production
+- [ ] Tester avec les differentes plateformes IA
 
 ### Bloque
 - Aucun blocage actuel
@@ -117,10 +118,48 @@
 - docs/ARCHITECTURE.md potentiellement desynchronise (a verifier)
 
 **Prochaines etapes recommandees** :
-- [ ] Documenter la commande `diagnose` dans README
-- [ ] Verifier/mettre a jour docs/ARCHITECTURE.md
+- [x] Documenter la commande `diagnose` dans README ✅ 2026-01-31
+- [x] Verifier/mettre a jour docs/ARCHITECTURE.md ✅ 2026-01-31
 - [ ] Tester avec les differentes plateformes IA
 - [ ] Preparer pour production
+
+---
+
+### 2026-01-31 - Revue de code approfondie (workflow full_review)
+
+**Objectif** : Revue de code orchestree par workflow-orchestrator avec 3 agents en parallele
+
+**Agents utilises** :
+1. rust-expert : revue idiomes Rust, performance, gestion d'erreurs
+2. security-reviewer : audit securite, vulnerabilites, injections
+3. inclusivity-reviewer : ecriture inclusive documentation FR
+
+**Corrections securite appliquees** :
+- Ajout timeout 30s sur `exec_nft_script` (DoS protection)
+- Ajout `canonicalize()` pour protection path traversal
+- Validation noms interface (alphanumerique, max 15 chars)
+
+**Corrections qualite Rust** :
+- Suppression fuite memoire `leak()` dans `find_command()`
+- Remplacement `unwrap()` par `expect()` avec justification
+
+**Corrections documentation** :
+- 24+ accents francais corriges dans README_FR.md
+- 2 points medians ajoutes dans skills YAML
+- Commande `diagnose` documentee dans README.md, README_FR.md, ARCHITECTURE.md
+
+**Fichiers modifies** :
+- `src/enforcer/mod.rs` (leak fix)
+- `src/enforcer/nftables.rs` (timeout)
+- `src/config.rs` (canonicalize + validation interface)
+- `src/validation.rs` (expect)
+- `README_FR.md` (accents + diagnose)
+- `README.md` (diagnose)
+- `docs/ARCHITECTURE.md` (diagnose)
+- `.ai/skills/security-reviewer.yaml` (point median)
+- `.ai/skills/inclusivity-reviewer.yaml` (point median)
+
+**Score securite** : 7.5/10 → 8.5/10 (amelioration)
 
 ---
 

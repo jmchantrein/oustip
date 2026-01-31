@@ -143,6 +143,16 @@ oustip report --top 20          # Afficher les 20 IPs les plus bloquees (défaut
 oustip health                   # Exécuter un controle de sante
 oustip health --json            # Sortie en format JSON (pour monitoring)
 
+# Diagnostics complets
+oustip diagnose                 # Exécuter tous les tests de diagnostic
+oustip diagnose --json          # Sortie JSON (pour intégration LLM/CI)
+oustip diagnose --category smoke      # Tests smoke uniquement
+oustip diagnose --category config     # Tests de configuration
+oustip diagnose --category connectivity  # Tests de connectivité
+oustip diagnose --category backend    # Tests du backend pare-feu
+oustip diagnose --category functional # Tests fonctionnels
+oustip diagnose --category resilience # Tests de résilience
+
 # Version et nettoyage
 oustip version                  # Afficher la version
 oustip uninstall                # Tout supprimer

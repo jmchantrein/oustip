@@ -37,6 +37,15 @@ src/
     ├── ipv6.rs             # oustip ipv6 *
     ├── health.rs           # oustip health (monitoring integration)
     ├── report.rs           # oustip report (JSON/text/markdown reports)
+    ├── diagnose/           # oustip diagnose (comprehensive runtime testing)
+    │   ├── mod.rs          # Diagnostic runner and output
+    │   ├── smoke.rs        # Smoke tests (critical functionality)
+    │   ├── config.rs       # Configuration validation tests
+    │   ├── connectivity.rs # External service availability tests
+    │   ├── backend.rs      # Firewall backend tests
+    │   ├── functional.rs   # Component integration tests
+    │   ├── resilience.rs   # Error handling and recovery tests
+    │   └── output.rs       # Report formatting (JSON/text)
     └── uninstall.rs        # oustip uninstall
 ```
 
@@ -195,6 +204,18 @@ main()
     │   ├── backend.get_stats()
     │   ├── format_report() -> text/json/markdown
     │   └── [if --send] AlertManager::send_report()
+    │
+    ├── diagnose [--json] [--category]
+    │   ├── DiagnosticRunner::new()
+    │   ├── run_all(category) [parallel test execution]
+    │   │   ├── Smoke tests (critical functionality)
+    │   │   ├── Config tests (validation coherence)
+    │   │   ├── Connectivity tests (external services)
+    │   │   ├── Backend tests (firewall operations)
+    │   │   ├── Functional tests (component integration)
+    │   │   └── Resilience tests (error handling)
+    │   ├── format output (text or JSON)
+    │   └── exit(1) if critical failures
     │
     └── uninstall
         ├── check_root()
