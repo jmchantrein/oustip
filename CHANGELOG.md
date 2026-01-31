@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/jmchantrein/oustip/compare/v0.2.0...v0.3.0) (2026-01-31)
+
+
+### Features
+
+* **ai:** add hybrid AI architecture for multi-platform support ([68aa0b5](https://github.com/jmchantrein/oustip/commit/68aa0b5565fde617425fa2b21556bb07de7d345f))
+
 # [0.2.0](https://github.com/jmchantrein/oustip/compare/v0.1.0...v0.2.0) (2026-01-31)
 
 
