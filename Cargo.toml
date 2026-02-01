@@ -72,7 +72,7 @@ dns-lookup = "2"
 hostname = "0.4"
 
 [dev-dependencies]
-mockall = "0.13"
+mockall = "0.14"
 tokio-test = "0.4"
 proptest = "1"
 criterion = { version = "0.8", features = ["html_reports"] }
