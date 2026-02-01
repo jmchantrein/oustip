@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/jmchantrein/oustip/compare/v0.3.0...v0.3.1) (2026-02-01)
+
+
+### Bug Fixes
+
+* address security and code quality issues from review ([3f5b2b2](https://github.com/jmchantrein/oustip/commit/3f5b2b2b3a02a02f9ab43d3c8939299e930a2c89))
+
 # [0.3.0](https://github.com/jmchantrein/oustip/compare/v0.2.0...v0.3.0) (2026-01-31)
 
 

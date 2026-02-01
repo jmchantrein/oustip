@@ -1,6 +1,6 @@
 [package]
 name = "oustip"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["OustIP Contributors"]
 description = "IP Blocklist Manager for Linux Gateways"
