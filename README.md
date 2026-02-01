@@ -7,6 +7,9 @@
 > [!WARNING]
 > This project is currently under development. Features may change, and the software is not yet ready for production use.
 
+> [!NOTE]
+> **LLM (AI) Development assisted by human(s)**: This project has been developed from the ground up with LLM assistance. The codebase includes a hybrid AI architecture with specialized agents. This architecture was defined with the prompt https://github.com/jmchantrein/Meta-prompt-LLM/tree/claude/add-post-review-rule-ZfAuW/prompts/fr/metaprompts/hybrid-ai-bootstrap (and in this specific case its variant hybrid-ai-takeover)
+
 **IP Blocklist Manager for Linux Gateways**
 
 > *"Oust!"* — French interjection meaning "Get out!", "Scram!"
@@ -142,6 +145,16 @@ oustip report --top 20          # Show top 20 blocked IPs (default: 10)
 # Health monitoring
 oustip health                   # Run health check
 oustip health --json            # Output in JSON format (for monitoring)
+
+# Comprehensive diagnostics
+oustip diagnose                 # Run all diagnostic tests
+oustip diagnose --json          # JSON output (for LLM/CI integration)
+oustip diagnose --category smoke      # Smoke tests only
+oustip diagnose --category config     # Configuration tests
+oustip diagnose --category connectivity  # Connectivity tests
+oustip diagnose --category backend    # Firewall backend tests
+oustip diagnose --category functional # Functional tests
+oustip diagnose --category resilience # Resilience tests
 
 # Version and cleanup
 oustip version                  # Show version

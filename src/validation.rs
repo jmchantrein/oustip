@@ -73,8 +73,11 @@ pub fn is_valid_interval(interval: &str) -> bool {
         return false;
     }
 
-    // Safe to use chars() since we verified ASCII-only
-    let suffix = interval.chars().last().unwrap();
+    // Safe: len >= 2 and ASCII-only verified above, so last() will succeed
+    let suffix = interval
+        .chars()
+        .last()
+        .expect("interval length >= 2 verified above");
     let num_part = &interval[..interval.len() - 1];
 
     matches!(suffix, 's' | 'm' | 'h' | 'd') && num_part.parse::<u32>().is_ok()
@@ -114,8 +117,11 @@ pub fn validate_interval(interval: &str) -> Result<()> {
         );
     }
 
-    // Safe to use chars() since we verified ASCII-only
-    let suffix = interval.chars().last().unwrap();
+    // Safe: len >= 2 and ASCII-only verified above, so last() will succeed
+    let suffix = interval
+        .chars()
+        .last()
+        .expect("interval length >= 2 verified above");
     let num_part = &interval[..interval.len() - 1];
 
     // Validate suffix

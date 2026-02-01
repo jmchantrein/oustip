@@ -47,15 +47,22 @@ static IP6TABLES_RESTORE_PATH: OnceLock<&'static str> = OnceLock::new();
 
 /// Find the absolute path for a command, checking /usr/sbin first, then /sbin.
 /// Falls back to the bare command name if neither exists (relies on PATH).
-fn find_command(name: &str, usr_sbin_path: &str, sbin_path: &str) -> &'static str {
+///
+/// Note: All parameters must be `&'static str` (compile-time constants) to avoid
+/// memory leaks. This function returns the reference directly without allocation.
+fn find_command(
+    name: &'static str,
+    usr_sbin_path: &'static str,
+    sbin_path: &'static str,
+) -> &'static str {
     if Path::new(usr_sbin_path).exists() {
-        return usr_sbin_path.to_string().leak();
+        return usr_sbin_path;
     }
     if Path::new(sbin_path).exists() {
-        return sbin_path.to_string().leak();
+        return sbin_path;
     }
     // Fallback to PATH-based lookup
-    name.to_string().leak()
+    name
 }
 
 /// Get the absolute path for nft command

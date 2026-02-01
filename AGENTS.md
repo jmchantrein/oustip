@@ -210,6 +210,43 @@ Synchroniser les versions apres chaque modification majeure.
 2. Proposer des options avec trade-offs
 3. Ne pas deviner les intentions
 
+## Regle 15 : Actions post-revue (OBLIGATOIRE)
+
+Apres chaque revue de code ou session de travail significative :
+
+### 1. Mettre a jour MEMORY.md
+- Ajouter une nouvelle section avec la date
+- Documenter les corrections appliquees
+- Lister les fichiers modifies
+- Noter les scores/metriques si applicable
+
+### 2. Synchroniser la documentation
+- Verifier que README.md/README_FR.md sont a jour
+- Verifier que docs/ARCHITECTURE.md reflete le code
+- Documenter les nouvelles commandes/fonctionnalites
+
+### 3. Marquer les taches terminees
+- Cocher les items dans "A faire" de MEMORY.md
+- Ajouter la date de completion
+
+### 4. Template de notes de session
+```markdown
+### YYYY-MM-DD - [Description session]
+
+**Objectif** : [Description]
+
+**Corrections appliquees** :
+- [Liste des corrections]
+
+**Fichiers modifies** :
+- [Liste des fichiers]
+
+**Observations** :
+- [Notes importantes]
+```
+
+Cette regle garantit la tracabilite et la continuite entre sessions.
+
 ---
 
 ## References

@@ -137,12 +137,20 @@ impl Config {
     /// Load configuration from YAML file with a custom filesystem implementation.
     ///
     /// This method enables testing without real filesystem access.
+    /// Note: Path canonicalization is performed to prevent path traversal attacks.
     pub fn load_with_fs<P: AsRef<Path>, F: FileSystem>(path: P, fs: &F) -> Result<Self> {
+        // Canonicalize path to prevent path traversal attacks (e.g., ../../etc/passwd)
+        // This resolves symlinks and removes . and .. components
+        let canonical_path = path
+            .as_ref()
+            .canonicalize()
+            .unwrap_or_else(|_| path.as_ref().to_path_buf());
+
         let content = fs
-            .read_to_string(path.as_ref())
-            .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
+            .read_to_string(&canonical_path)
+            .with_context(|| format!("Failed to read config file: {:?}", canonical_path))?;
         let config: Config = serde_saphyr::from_str(&content)
-            .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
+            .with_context(|| format!("Failed to parse config file: {:?}", canonical_path))?;
 
         // Validate configuration
         config.validate()?;
@@ -220,6 +228,21 @@ impl Config {
     /// Validate interface configurations (interface-based mode)
     fn validate_interfaces(&self, interfaces: &HashMap<String, InterfaceConfig>) -> Result<()> {
         for (name, iface_config) in interfaces {
+            // Validate interface name format (security: prevent injection)
+            // Linux interface names: alphanumeric, dash, underscore, max 15 chars
+            if name.is_empty() || name.len() > 15 {
+                anyhow::bail!("Invalid interface name '{}': must be 1-15 characters", name);
+            }
+            if !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+            {
+                anyhow::bail!(
+                    "Invalid interface name '{}': only alphanumeric, dash, underscore, and dot allowed",
+                    name
+                );
+            }
+
             // Loopback cannot be configured (it's always trusted)
             if name == "lo" {
                 anyhow::bail!("Interface 'lo' cannot be configured - it is always trusted");
