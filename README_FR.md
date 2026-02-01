@@ -8,7 +8,7 @@
 > Ce projet est actuellement en cours de développement. Les fonctionnalités peuvent changer et le logiciel n'est pas encore prêt pour une utilisation en production.
 
 > [!NOTE]
-> **Développement assisté par IA** : Ce projet a été développé dès le départ avec l'assistance de LLM (Claude, GPT-4, etc.). Le codebase inclut une architecture IA hybride (`.ai/`) avec des agents spécialisés pour la revue de code, l'audit sécurité et l'écriture inclusive. Voir [AGENTS.md](AGENTS.md) pour les règles de développement et [.ai/MEMORY.md](.ai/MEMORY.md) pour le contexte du projet.
+> **Développement LLM (IA) assisté par être(s) humain(s)** : Ce projet a été développé dès le départ avec l'assistance de LLM. Le codebase inclut une architecture IA hybride avec des agents spécialisés. Cette architecture a été défini avec le prompt https://github.com/jmchantrein/Meta-prompt-LLM/tree/claude/add-post-review-rule-ZfAuW/prompts/fr/metaprompts/hybrid-ai-bootstrap (et dans ce cas précis sa variante hybrid-ai-takeover)
 
 **Gestionnaire de Blocklists IP pour Passerelles Linux**
 

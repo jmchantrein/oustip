@@ -8,7 +8,7 @@
 > This project is currently under development. Features may change, and the software is not yet ready for production use.
 
 > [!NOTE]
-> **AI-Assisted Development**: This project has been developed from the ground up with LLM assistance (Claude, GPT-4, etc.). The codebase includes a hybrid AI architecture (`.ai/`) with specialized agents for code review, security auditing, and inclusive writing. See [AGENTS.md](AGENTS.md) for development rules and [.ai/MEMORY.md](.ai/MEMORY.md) for project context.
+> **LLM (AI) Development assisted by human(s)**: This project has been developed from the ground up with LLM assistance. The codebase includes a hybrid AI architecture with specialized agents. This architecture was defined with the prompt https://github.com/jmchantrein/Meta-prompt-LLM/tree/claude/add-post-review-rule-ZfAuW/prompts/fr/metaprompts/hybrid-ai-bootstrap (and in this specific case its variant hybrid-ai-takeover)
 
 **IP Blocklist Manager for Linux Gateways**
 
