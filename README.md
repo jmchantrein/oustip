@@ -7,6 +7,9 @@
 > [!WARNING]
 > This project is currently under development. Features may change, and the software is not yet ready for production use.
 
+> [!NOTE]
+> **AI-Assisted Development**: This project has been developed from the ground up with LLM assistance (Claude, GPT-4, etc.). The codebase includes a hybrid AI architecture (`.ai/`) with specialized agents for code review, security auditing, and inclusive writing. See [AGENTS.md](AGENTS.md) for development rules and [.ai/MEMORY.md](.ai/MEMORY.md) for project context.
+
 **IP Blocklist Manager for Linux Gateways**
 
 > *"Oust!"* — French interjection meaning "Get out!", "Scram!"

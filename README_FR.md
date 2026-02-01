@@ -7,6 +7,9 @@
 > [!WARNING]
 > Ce projet est actuellement en cours de développement. Les fonctionnalités peuvent changer et le logiciel n'est pas encore prêt pour une utilisation en production.
 
+> [!NOTE]
+> **Développement assisté par IA** : Ce projet a été développé dès le départ avec l'assistance de LLM (Claude, GPT-4, etc.). Le codebase inclut une architecture IA hybride (`.ai/`) avec des agents spécialisés pour la revue de code, l'audit sécurité et l'écriture inclusive. Voir [AGENTS.md](AGENTS.md) pour les règles de développement et [.ai/MEMORY.md](.ai/MEMORY.md) pour le contexte du projet.
+
 **Gestionnaire de Blocklists IP pour Passerelles Linux**
 
 > *"Oust !"* — Interjection française signifiant "Dehors !", "Du balai !"
